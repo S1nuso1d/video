@@ -190,3 +190,8 @@ pytest
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [SQLAlchemy](https://docs.sqlalchemy.org/)
 - [Alembic](https://alembic.sqlalchemy.org/)
+
+
+## Быстрый запуск
+
+Подробная памятка для ежедневного запуска на Windows находится в [START_HERE.md](START_HERE.md): команды PowerShell, адреса интерфейса, Swagger и решения частых проблем.
