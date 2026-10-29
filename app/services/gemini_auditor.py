@@ -21,9 +21,16 @@ class GeminiConfigurationError(RuntimeError):
 class GeminiAuditError(RuntimeError):
     """Safe, user-facing error raised when Gemini cannot produce a valid report."""
 
-    def __init__(self, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        status_code: int | None = None,
+    ) -> None:
         super().__init__(message)
         self.retryable = retryable
+        self.status_code = status_code
 
 
 def _status_code(exc: Exception) -> int | None:
@@ -120,8 +127,17 @@ def analyze_youtube_video(youtube_url: str, content_type: str) -> AuditReport:
         raise
     except Exception as exc:  # SDK/provider exception types vary between releases.
         retryable = is_retryable_gemini_error(exc)
+        status_code = _status_code(exc)
         if retryable:
-            logger.warning("Transient Gemini API failure (%s)", type(exc).__name__)
+            logger.warning(
+                "Transient Gemini API failure (%s, HTTP %s)",
+                type(exc).__name__,
+                status_code if status_code is not None else "unknown",
+            )
         else:
             logger.exception("Gemini API call failed")
-        raise GeminiAuditError(describe_gemini_error(exc), retryable=retryable) from exc
+        raise GeminiAuditError(
+            describe_gemini_error(exc),
+            retryable=retryable,
+            status_code=status_code,
+        ) from exc

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.gemini_auditor import (
+    GeminiAuditError,
     describe_gemini_error,
     is_retryable_gemini_error,
 )
@@ -44,7 +45,17 @@ def test_timeout_message_is_actionable() -> None:
     assert "повторён автоматически" in describe_gemini_error(TimeoutError("read timeout"))
 
 
-def test_connection_error_message_is_safe() -> None:
+def test_connection_message_is_safe() -> None:
     result = describe_gemini_error(ConnectionError("server disconnected with secret"))
     assert "Соединение с Gemini API прервалось" in result
     assert "secret" not in result
+
+
+def test_gemini_audit_error_preserves_http_status_for_queue_cooldown() -> None:
+    error = GeminiAuditError(
+        "rate limit",
+        retryable=True,
+        status_code=429,
+    )
+    assert error.retryable is True
+    assert error.status_code == 429

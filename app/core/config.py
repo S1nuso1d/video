@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # Worker-level retries happen only after the SDK's bounded retries are exhausted.
     audit_max_attempts: int = 2
     audit_retry_delay_seconds: int = 30
+    # If Gemini returns HTTP 429, delay all queued jobs so they share one cooldown.
+    gemini_rate_limit_cooldown_seconds: int = 120
     worker_poll_seconds: float = 2.0
     stale_job_minutes: int = 240
     gemini_poll_seconds: int = 5
