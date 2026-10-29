@@ -2,7 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.gemini_auditor import describe_gemini_error
+from app.services.gemini_auditor import (
+    describe_gemini_error,
+    is_retryable_gemini_error,
+)
 
 
 @pytest.mark.parametrize(
@@ -22,3 +25,26 @@ def test_unknown_gemini_error_does_not_expose_provider_details() -> None:
     result = describe_gemini_error(exc)
     assert "Проверь журнал Worker" in result
     assert "sensitive internal provider details" not in result
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (TimeoutError("read timeout"), True),
+        (ConnectionError("server disconnected"), True),
+        (RuntimeError("permission denied"), False),
+        (SimpleNamespace(code=503), True),
+    ],
+)
+def test_transient_gemini_error_classification(exc: Exception, expected: bool) -> None:
+    assert is_retryable_gemini_error(exc) is expected
+
+
+def test_timeout_message_is_actionable() -> None:
+    assert "повторён автоматически" in describe_gemini_error(TimeoutError("read timeout"))
+
+
+def test_connection_error_message_is_safe() -> None:
+    result = describe_gemini_error(ConnectionError("server disconnected with secret"))
+    assert "Соединение с Gemini API прервалось" in result
+    assert "secret" not in result

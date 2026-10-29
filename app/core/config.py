@@ -15,13 +15,16 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
     # Google Gen AI SDK timeout is specified in milliseconds.
     gemini_timeout_ms: int = 180000
-    # Attempts includes the initial request.
+    # Attempts includes the initial request made by the SDK.
     gemini_retry_attempts: int = 3
     gemini_retry_initial_delay: float = 1.0
     gemini_retry_max_delay: float = 8.0
+    # Worker-level retries happen only after the SDK's bounded retries are exhausted.
+    audit_max_attempts: int = 2
+    audit_retry_delay_seconds: int = 30
     worker_poll_seconds: float = 2.0
     stale_job_minutes: int = 240
-    gemini_poll_seconds: float = 5.0
+    gemini_poll_seconds: int = 5
     gemini_max_wait_seconds: int = 1800
     log_level: str = "INFO"
 

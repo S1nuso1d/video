@@ -4,7 +4,7 @@ import signal
 import time
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 
 from app.core.config import settings
 from app.core.logging_config import configure_logging
@@ -30,18 +30,33 @@ def recover_stale_jobs() -> int:
         result = db.execute(
             update(AuditRecord)
             .where(AuditRecord.status == "processing", AuditRecord.started_at < cutoff)
-            .values(status="pending", started_at=None, error_message=None)
+            .values(
+                status="pending",
+                started_at=None,
+                next_retry_at=None,
+                error_message=(
+                    "Предыдущий процесс Worker завершился до окончания анализа. "
+                    "Задание возвращено в очередь."
+                ),
+            )
         )
         db.commit()
         return int(result.rowcount or 0)
 
 
 def claim_next_job() -> str | None:
+    now = datetime.now(timezone.utc)
     with SessionLocal() as db:
         with db.begin():
             statement = (
                 select(AuditRecord)
-                .where(AuditRecord.status == "pending")
+                .where(
+                    AuditRecord.status == "pending",
+                    or_(
+                        AuditRecord.next_retry_at.is_(None),
+                        AuditRecord.next_retry_at <= now,
+                    ),
+                )
                 .order_by(AuditRecord.created_at.asc())
                 .limit(1)
                 .with_for_update(skip_locked=True)
@@ -50,8 +65,8 @@ def claim_next_job() -> str | None:
             if record is None:
                 return None
             record.status = "processing"
-            record.started_at = datetime.now(timezone.utc)
-            record.updated_at = datetime.now(timezone.utc)
+            record.started_at = now
+            record.updated_at = now
             return record.id
 
 

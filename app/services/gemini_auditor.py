@@ -19,41 +19,66 @@ class GeminiConfigurationError(RuntimeError):
 
 
 class GeminiAuditError(RuntimeError):
-    pass
+    """Safe, user-facing error raised when Gemini cannot produce a valid report."""
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
+def _status_code(exc: Exception) -> int | None:
+    raw_code: Any = getattr(exc, "code", None)
+    try:
+        return int(raw_code) if raw_code is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def is_retryable_gemini_error(exc: Exception) -> bool:
+    """Recognize transient SDK/network failures without depending on private SDK classes."""
+    code = _status_code(exc)
+    if code in RETRYABLE_HTTP_STATUS_CODES:
+        return True
+    name = type(exc).__name__.lower()
+    text = str(exc).lower()
+    if any(token in name for token in ("timeout", "connection", "temporarilyunavailable")):
+        return True
+    return any(
+        token in text
+        for token in (
+            "read timeout",
+            "timed out",
+            "server disconnected",
+            "connection reset",
+            "connection aborted",
+            "temporarily unavailable",
+        )
+    )
 
 
 def describe_gemini_error(exc: Exception) -> str:
-    """Return a safe, useful message without exposing SDK request details or credentials."""
-    raw_code: Any = getattr(exc, "code", None)
-    try:
-        code = int(raw_code) if raw_code is not None else None
-    except (TypeError, ValueError):
-        code = None
+    """Return a safe Russian message without exposing SDK request details or credentials."""
+    code = _status_code(exc)
+    name = type(exc).__name__.lower()
 
     if code == 503:
-        return (
-            "Gemini API временно перегружен (HTTP 503). Ограниченное число попыток "
-            "исчерпано. Проверь статус сервиса и повтори аудит немного позже."
-        )
+        return "Gemini API временно перегружен (HTTP 503). Сервис не ответил после повторных попыток."
     if code == 429:
-        return (
-            "Gemini API вернул HTTP 429: достигнут лимит запросов или квоты. "
-            "Проверь ограничения проекта и повтори аудит позже."
-        )
+        return "Gemini API вернул HTTP 429: достигнут лимит запросов или квоты. Проверь ограничения проекта."
     if code in RETRYABLE_HTTP_STATUS_CODES:
-        return (
-            f"Временная ошибка Gemini API (HTTP {code}) после ограниченного числа попыток. "
-            "Повтори аудит позже."
-        )
+        return f"Временная ошибка Gemini API (HTTP {code}). Попробуем повторить анализ автоматически."
+    if "timeout" in name or "timeout" in str(exc).lower() or "timed out" in str(exc).lower():
+        return "Gemini API не ответил вовремя. Анализ будет повторён автоматически."
+    if "connection" in name or any(
+        token in str(exc).lower()
+        for token in ("server disconnected", "connection reset", "connection aborted")
+    ):
+        return "Соединение с Gemini API прервалось. Анализ будет повторён автоматически."
     return "Не удалось получить или проверить отчёт Gemini API. Проверь журнал Worker."
 
 
 def analyze_youtube_video(youtube_url: str, content_type: str) -> AuditReport:
-    """Inspect a public YouTube URL and return a validated SFT report.
-
-    Retries transient provider errors a bounded number of times. Does not download
-    or persist video bytes.
-    """
+    """Inspect a public YouTube URL and return a validated SFT report."""
     if not settings.gemini_api_key.strip():
         raise GeminiConfigurationError(
             "GEMINI_API_KEY не задан. Добавь ключ в .env и перезапусти worker."
@@ -87,27 +112,16 @@ def analyze_youtube_video(youtube_url: str, content_type: str) -> AuditReport:
             },
         )
         output_text = interaction.output_text
-
         if not output_text:
             raise GeminiAuditError("Gemini API вернул пустой ответ.")
         report = AuditReport.model_validate_json(output_text)
         return enforce_conservative_policy(report)
-    except GeminiConfigurationError:
+    except (GeminiConfigurationError, GeminiAuditError):
         raise
-    except GeminiAuditError:
-        raise
-    except Exception as exc:  # SDK/provider exception types can vary between releases.
-        raw_code = getattr(exc, "code", None)
-        try:
-            status_code = int(raw_code) if raw_code is not None else None
-        except (TypeError, ValueError):
-            status_code = None
-
-        if status_code in RETRYABLE_HTTP_STATUS_CODES:
-            logger.warning(
-                "Gemini API request failed with HTTP %s after bounded SDK retries",
-                status_code,
-            )
+    except Exception as exc:  # SDK/provider exception types vary between releases.
+        retryable = is_retryable_gemini_error(exc)
+        if retryable:
+            logger.warning("Transient Gemini API failure (%s)", type(exc).__name__)
         else:
             logger.exception("Gemini API call failed")
-        raise GeminiAuditError(describe_gemini_error(exc)) from exc
+        raise GeminiAuditError(describe_gemini_error(exc), retryable=retryable) from exc
