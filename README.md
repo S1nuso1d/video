@@ -234,7 +234,7 @@ All settings load from .env.
 |---|---:|---|
 | DATABASE_URL | local Docker PostgreSQL | SQLAlchemy connection |
 | GEMINI_API_KEY | empty | Gemini API key |
-| WORKSPACE_ACCESS_KEY | empty | Optional shared team key |
+| WORKSPACE_ACCESS_KEY | empty | Optional shared team key |\n| CORS_ALLOWED_ORIGINS | [] | Explicit JSON list of browser origins allowed to call the API from an existing portal |
 | GEMINI_MODEL | gemini-3.8-flash | Gemini model |
 | GEMINI_YOUTUBE_DIRECT | true | Pass a public YouTube URL directly to Gemini; false uses Gemini Files |
 | GEMINI_TIMEOUT_MS | 180000 | Gemini HTTP request timeout in milliseconds |
