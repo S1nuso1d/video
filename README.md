@@ -277,6 +277,16 @@ Technical fields are allow-listed; arbitrary Python paths or expressions are not
 
 **Resolution note:** the default yt-dlp selector is `bv*+ba/b`, so the worker no longer caps the download at 720p before checking the source. If your existing local `.env` contains the old `VIDEO_FORMAT=bv*[height<=720]+ba/b[height<=720]/b`, update that one line to `VIDEO_FORMAT=bv*+ba/b` manually; do not overwrite your `.env` or copy over API keys.
 
+## Gemini cost and processing observability
+
+For every completed or failed attempt where the Interactions API returns usage, Video Auditor records input/output/thinking/cached token counters and estimates the API cost. Output pricing already includes thinking tokens; they are shown separately for diagnostics and are not charged a second time. If Google omits usage counters, the request is recorded as having unknown usage and the estimated cost remains `null`; the application never estimates tokens from video duration.
+
+The pricing rate card is configurable in `.env`. Defaults target the Gemini 3.8 Flash **standard paid tier** through 2026-12-31: input USD 0.75 / 1M tokens, cached input USD 0.075 / 1M tokens, and output USD 3.75 / 1M tokens (including thinking tokens). Google has published different rates effective 2027-01-01; update the three rates and `GEMINI_PRICING_VERSION` before that date, or whenever the selected model/billing tier changes. These are estimated costs based on a configured rate card, not provider invoices. Set `GEMINI_USD_TO_RUB_RATE` to the exchange rate selected by your finance process to show an estimated ruble amount; it defaults to 0, which disables RUB conversion.
+
+Each audit also stores per-attempt duration for download, FFprobe, OpenCV, and Gemini, plus cumulative timing across worker retries. Usage/costs from a Gemini response are preserved even when later report validation fails and the worker retries. Manual requeue clears historical usage/cost and timing fields so the next run starts a new measurement.
+
+The API response exposes `gemini_usage`, `gemini_cost_usd`, `gemini_cost_rub`, and `processing_metrics`. The web interface shows token counts, estimate availability, and stage timings.
+
 ## Expert-labelled dataset calibration
 
 The offline calibration tool compares audit results with expert labels. It does not change the production verdict and does not train or fine-tune Gemini/OpenCV.
