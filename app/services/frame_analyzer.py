@@ -90,7 +90,9 @@ def _build_findings(
     for run in black_runs:
         start = run[0].timestamp_seconds
         end = run[-1].timestamp_seconds + interval
-        duration = max(interval, end - start)
+        if duration_seconds is not None and duration_seconds > 0:
+            end = min(end, duration_seconds)
+        duration = max(0.0, end - start)
         if duration < settings.cv_black_min_duration_seconds:
             continue
         findings.append(
