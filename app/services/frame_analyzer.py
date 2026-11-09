@@ -548,6 +548,7 @@ def analyze_video_frames(
                     dark_pixel_ratio=dark_ratio,
                     motion_mean_difference=motion_mean_difference,
                     motion_changed_pixel_ratio=motion_changed_pixel_ratio,
+                    frame_index=frame_index,
                 )
             )
             previous_gray = gray
