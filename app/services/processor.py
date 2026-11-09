@@ -11,12 +11,18 @@ from app.services.gemini_auditor import (
     GeminiConfigurationError,
     analyze_youtube_video,
 )
+from app.services.video_downloader import (
+    DownloadedVideo,
+    VideoDownloadError,
+    cleanup_audit_temp_dir,
+    download_video,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def process_audit(audit_id: str) -> None:
-    """Run one audit; back off queued work when Gemini reports a rate limit."""
+    """Run one audit using an isolated local video download."""
     with SessionLocal() as db:
         record = db.get(AuditRecord, audit_id)
         if record is None:
@@ -29,8 +35,21 @@ def process_audit(audit_id: str) -> None:
         record.updated_at = datetime.now(timezone.utc)
         db.commit()
 
+    downloaded: DownloadedVideo | None = None
     try:
-        report = analyze_youtube_video(youtube_url, content_type)
+        logger.info("Downloading source video for audit %s", audit_id)
+        downloaded = download_video(youtube_url, audit_id)
+        logger.info(
+            "Downloaded audit %s to temporary file (%s bytes)",
+            audit_id,
+            downloaded.path.stat().st_size,
+        )
+
+        report = analyze_youtube_video(
+            youtube_url,
+            content_type,
+            local_video_path=downloaded.path,
+        )
         report_dict = report.model_dump(mode="json")
         with SessionLocal() as db:
             record = db.get(AuditRecord, audit_id)
@@ -57,13 +76,11 @@ def process_audit(audit_id: str) -> None:
         max_attempts = max(1, settings.audit_max_attempts)
         will_retry = retryable and current_attempt < max_attempts
 
-        if isinstance(exc, (GeminiAuditError, GeminiConfigurationError)):
+        if isinstance(exc, (GeminiAuditError, GeminiConfigurationError, VideoDownloadError)):
             safe_message = str(exc)[:500]
         else:
             safe_message = "Не удалось завершить анализ. Проверьте настройки и журнал Worker."
 
-        # A 429 may be caused by the project's shared token/request limits. Pause
-        # every queued item so the worker does not immediately send more requests.
         cooldown_seconds = max(30, int(settings.gemini_rate_limit_cooldown_seconds))
         cooldown_until = now + timedelta(seconds=cooldown_seconds) if rate_limited else None
 
@@ -120,3 +137,7 @@ def process_audit(audit_id: str) -> None:
             )
         else:
             logger.exception("Audit %s attempt %s failed", audit_id, current_attempt)
+    finally:
+        if downloaded is not None:
+            cleanup_audit_temp_dir(downloaded.work_dir)
+            logger.info("Cleaned temporary files for audit %s", audit_id)
