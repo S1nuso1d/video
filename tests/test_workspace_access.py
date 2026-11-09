@@ -43,14 +43,14 @@ def test_workspace_key_is_optional_for_local_development(monkeypatch):
 
 
 def test_workspace_key_is_shared_and_account_apis_are_removed(monkeypatch):
-    client, engine = _client(monkeypatch, "same-key-for-everyone")
+    client, engine = _client(monkeypatch, "same-key-for-everyone-in-the-shared-workspace-test")
     try:
         assert client.get("/api/v1/audits").status_code == 401
         assert client.get(
             "/api/v1/audits",
             headers={"Authorization": "Bearer invalid"},
         ).status_code == 401
-        headers = {"Authorization": "Bearer same-key-for-everyone"}
+        headers = {"Authorization": "Bearer same-key-for-everyone-in-the-shared-workspace-test"}
         assert client.get("/api/v1/audits", headers=headers).status_code == 200
         assert client.get("/api/v1/reviews/queue", headers=headers).status_code == 200
         created = client.post(
