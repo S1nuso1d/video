@@ -83,6 +83,56 @@ function appendTechnicalEvidence(parent,a){
   parent.append(list);
  }
 }
+function formatVisualTime(seconds){
+ if(!Number.isFinite(seconds)||seconds<0)return "—";
+ const whole=Math.floor(seconds),hours=Math.floor(whole/3600),minutes=Math.floor((whole%3600)/60),secs=whole%60;
+ return hours>0?String(hours).padStart(2,"0")+":"+String(minutes).padStart(2,"0")+":"+String(secs).padStart(2,"0"):String(minutes).padStart(2,"0")+":"+String(secs).padStart(2,"0");
+}
+function appendVisualEvidence(parent,a){
+ const visual=a.visual_metadata||null;
+ const findings=Array.isArray(a.visual_findings)?a.visual_findings:[];
+ if(visual){
+  const tags=node("div","tags");
+  tags.append(
+   node("span","tag","Кадров проверено: "+(visual.sampled_frames??"—")),
+   node("span","tag","Шаг выборки: "+(Number.isFinite(visual.sample_interval_seconds)?visual.sample_interval_seconds.toFixed(2)+" сек":"—")),
+   node("span","tag","OpenCV: "+(visual.opencv_version||"—"))
+  );
+  if(visual.source_width&&visual.source_height)tags.append(node("span","tag","Исходный кадр: "+visual.source_width+" × "+visual.source_height));
+  if(Number.isFinite(visual.source_fps))tags.append(node("span","tag","Источник: "+visual.source_fps.toFixed(2)+" FPS"));
+  if(visual.sampling_was_capped)tags.append(node("span","tag","Достигнут лимит выборки"));
+  parent.append(node("div","section-title","Компьютерный анализ · OpenCV"),tags);
+ }
+ if(findings.length){
+  parent.append(node("div","section-title","Визуальные наблюдения"));
+  const list=node("div","defects");
+  const labels={
+   black_frame_segment:"Возможный чёрный участок",
+   freeze_frame_suspected:"Возможное зависание кадра",
+   opencv_unavailable:"OpenCV недоступен",
+   opencv_analysis_failed:"Компьютерный анализ не завершён"
+  };
+  findings.forEach(f=>{
+   const card=node("article","defect"),top=node("div","defect-top"),name=node("div");
+   name.append(node("div","defect-name",labels[f.code]||f.code||"Визуальное наблюдение"));
+   const ev=f.evidence||{};
+   if(Number.isFinite(ev.start_time_seconds)){
+    const end=Number.isFinite(ev.end_time_seconds)?" – "+formatVisualTime(ev.end_time_seconds):"";
+    name.append(node("div","defect-time","Ориентировочно: "+formatVisualTime(ev.start_time_seconds)+end));
+   }
+   top.append(name,node("span","tag",f.severity||"observation"));
+   card.append(top);
+   if(f.description)card.append(node("div","defect-desc",f.description));
+   const evidenceTags=node("div","tags");
+   if(Number.isFinite(ev.estimated_duration_seconds))evidenceTags.append(node("span","tag","Длительность: ~"+ev.estimated_duration_seconds.toFixed(2)+" сек"));
+   if(Number.isFinite(ev.sample_count))evidenceTags.append(node("span","tag","Выборок в участке: "+ev.sample_count));
+   if(f.confidence)evidenceTags.append(node("span","tag","Уверенность: "+f.confidence));
+   if(evidenceTags.childNodes.length)card.append(evidenceTags);
+   list.append(card);
+  });
+  parent.append(list);
+ }
+}
 function addList(parent,title,items){if(!Array.isArray(items)||!items.length)return;parent.append(node("div","section-title",title));const ul=node("ul","plain-list");items.forEach(x=>ul.append(node("li","",x)));parent.append(ul)}
 function renderResult(a){
 result.replaceChildren();subtitle.textContent="ID: "+a.id;const head=node("div","result-head"),about=node("div");about.append(node("h3","",a.video_id?"Видео "+a.video_id:"Аудит видео"));const link=node("a","result-url",a.youtube_url||"");link.href=a.youtube_url||"#";link.target="_blank";link.rel="noreferrer";about.append(link);const status=node("div");status.append(statusPill(a.status));if(a.status==="completed"&&a.verdict){status.append(document.createTextNode(" "));status.append(verdictPill(a.verdict))}head.append(about,status);result.append(head);
