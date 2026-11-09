@@ -13,7 +13,7 @@ UI_FILE = Path(__file__).parent / "static" / "index.html"
 
 app = FastAPI(
     title=settings.project_name,
-    version="0.4.0",
+    version="0.5.0",
     description=(
         "Предварительная проверка публичных YouTube-видео по SFT Stage 1. "
         "Результаты не заменяют ручную проверку."
