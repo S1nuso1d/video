@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from app.calibration_cli import main as calibration_cli_main
 from app.services.calibration import (
     CalibrationDataError,
     calibration_report_markdown,
