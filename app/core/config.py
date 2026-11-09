@@ -87,6 +87,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_worker_lease_settings(self):
+        if self.auth_access_token_minutes < 1:
+            raise ValueError("AUTH_ACCESS_TOKEN_MINUTES must be at least 1")
+        if self.auth_secret_key and len(self.auth_secret_key) < 32:
+            raise ValueError("AUTH_SECRET_KEY must contain at least 32 characters")
         if self.worker_heartbeat_seconds < 1:
             raise ValueError("WORKER_HEARTBEAT_SECONDS must be at least 1")
         if self.worker_lease_timeout_seconds < self.worker_heartbeat_seconds * 3:
