@@ -211,6 +211,7 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 GeminiConfigurationError,
                 VideoDownloadError,
                 VideoProbeError,
+                VideoFrameAnalysisError,
             ),
         ):
             safe_message = str(exc)[:500]
