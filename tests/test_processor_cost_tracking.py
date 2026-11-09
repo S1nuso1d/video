@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
 from app.models.audit import AuditRecord
+from app.models.review import HumanReviewEvent
 from app.services import processor
 from app.services.gemini_auditor import GeminiAuditError, GeminiAuditResult
 from app.services.video_downloader import DownloadedVideo
@@ -121,6 +122,46 @@ def test_processor_persists_usage_cost_and_stage_timings_on_success(
             assert set(record.processing_metrics["last_attempt"]["stage_durations_seconds"]) == {
                 "download", "ffprobe", "opencv", "gemini"
             }
+        assert not work_dir.exists()
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+def test_processor_routes_manual_review_report_to_queue(tmp_path, monkeypatch):
+    engine, factory, work_dir = _prepare(tmp_path, monkeypatch, "audit-review-queue")
+
+    class ManualReviewReport(FakeReport):
+        verdict = SimpleNamespace(value="manual_review_required")
+        summary = "The evidence is ambiguous."
+        markup_comment = "Нужна ручная проверка."
+
+    monkeypatch.setattr(
+        processor,
+        "analyze_youtube_video",
+        lambda *args, **kwargs: GeminiAuditResult(
+            report=ManualReviewReport(),
+            usage=None,
+        ),
+    )
+
+    try:
+        processor.process_audit("audit-review-queue", "test-lease")
+        with factory() as db:
+            record = db.get(AuditRecord, "audit-review-queue")
+            assert record.status == "completed"
+            assert record.verdict == "manual_review_required"
+            assert record.review_status == "pending"
+            assert record.human_review_decision is None
+            events = list(
+                db.query(HumanReviewEvent)
+                .filter(HumanReviewEvent.audit_id == "audit-review-queue")
+                .all()
+            )
+            assert len(events) == 1
+            assert events[0].action == "queued"
+            assert events[0].to_status == "pending"
+            assert "AI verdict" in events[0].comment
         assert not work_dir.exists()
     finally:
         Base.metadata.drop_all(engine)
