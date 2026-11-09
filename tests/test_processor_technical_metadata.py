@@ -188,6 +188,8 @@ def test_processor_continues_when_ffprobe_is_optional_and_missing(
             assert record.status == "completed"
             assert record.technical_metadata is None
             assert record.technical_findings[0]["code"] == "ffprobe_unavailable"
+            assert record.visual_metadata is None
+            assert record.visual_findings[0]["code"] == "opencv_unavailable"
         assert not work_dir.exists()
     finally:
         Base.metadata.drop_all(engine)
