@@ -141,5 +141,9 @@ class AuditResponse(BaseModel):
     criteria_results: dict | None = None
     decision: Literal["APPROVE", "REVIEW", "REJECT"] | None = None
     decision_summary: str | None = None
+    gemini_usage: dict | None = None
+    gemini_cost_usd: float | None = None
+    gemini_cost_rub: float | None = None
+    processing_metrics: dict | None = None
     markup_comment: str | None = None
     error_message: str | None = None
