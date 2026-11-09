@@ -53,6 +53,17 @@ def test_workspace_key_is_shared_and_account_apis_are_removed(monkeypatch):
         headers = {"Authorization": "Bearer same-key-for-everyone"}
         assert client.get("/api/v1/audits", headers=headers).status_code == 200
         assert client.get("/api/v1/reviews/queue", headers=headers).status_code == 200
+        created = client.post(
+            "/api/v1/audits",
+            headers=headers,
+            json={
+                "youtube_url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+                "content_type": "live_action",
+            },
+        )
+        assert created.status_code == 202, created.text
+        assert created.json()["status"] == "pending"
+        assert "created_by_user_id" not in created.json()
         assert client.post(
             "/api/v1/auth/token",
             json={"email": "nobody@example.com", "password": "pass"},
