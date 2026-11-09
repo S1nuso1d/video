@@ -18,6 +18,11 @@ from app.services.video_downloader import (
     cleanup_audit_temp_dir,
     download_video,
 )
+from app.services.video_probe import (
+    FFprobeUnavailableError,
+    VideoProbeError,
+    probe_video,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +51,62 @@ def process_audit(audit_id: str, lease_token: str) -> None:
     try:
         logger.info("Downloading source video for audit %s", audit_id)
         downloaded = download_video(youtube_url, audit_id)
+        downloaded_size = downloaded.path.stat().st_size
         logger.info(
             "Downloaded audit %s to temporary file (%s bytes)",
             audit_id,
-            downloaded.path.stat().st_size,
+            downloaded_size,
         )
+
+        try:
+            probe_result = probe_video(downloaded.path)
+            technical_metadata = probe_result.metadata
+            technical_findings = probe_result.findings
+            logger.info(
+                "FFprobe inspected audit %s: duration=%.3fs size=%s bytes",
+                audit_id,
+                technical_metadata["duration_seconds"],
+                downloaded_size,
+            )
+        except FFprobeUnavailableError as exc:
+            if settings.ffprobe_required:
+                raise
+            technical_metadata = None
+            technical_findings = [
+                {
+                    "code": "ffprobe_unavailable",
+                    "severity": "warning",
+                    "source": "system",
+                    "confidence": "high",
+                    "description": str(exc),
+                    "evidence": {},
+                }
+            ]
+            logger.warning("Skipping technical metadata for audit %s: %s", audit_id, exc)
+
+        # Persist deterministic evidence before the expensive AI request. The
+        # update is fenced so an expired worker cannot attach evidence to a new attempt.
+        with SessionLocal() as db:
+            saved = db.execute(
+                update(AuditRecord)
+                .where(
+                    AuditRecord.id == audit_id,
+                    AuditRecord.status == "processing",
+                    AuditRecord.lease_token == lease_token,
+                )
+                .values(
+                    technical_metadata=technical_metadata,
+                    technical_findings=technical_findings,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            db.commit()
+            if saved.rowcount != 1:
+                logger.warning(
+                    "Stopping audit %s because its lease changed before AI analysis",
+                    audit_id,
+                )
+                return
 
         report = analyze_youtube_video(
             youtube_url,
@@ -74,7 +130,6 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                     detected_defects=[
                         item.model_dump(mode="json") for item in report.detected_defects
                     ],
-                    markup_comment=report.markup_comment,
                     status="completed",
                     error_message=None,
                     next_retry_at=None,
@@ -101,7 +156,15 @@ def process_audit(audit_id: str, lease_token: str) -> None:
         max_attempts = max(1, int(settings.audit_max_attempts))
         will_retry = retryable and current_attempt < max_attempts
 
-        if isinstance(exc, (GeminiAuditError, GeminiConfigurationError, VideoDownloadError)):
+        if isinstance(
+            exc,
+            (
+                GeminiAuditError,
+                GeminiConfigurationError,
+                VideoDownloadError,
+                VideoProbeError,
+            ),
+        ):
             safe_message = str(exc)[:500]
         else:
             safe_message = "Не удалось завершить анализ. Проверьте настройки и журнал Worker."
