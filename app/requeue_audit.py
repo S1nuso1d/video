@@ -37,6 +37,13 @@ def main() -> int:
         record.technical_findings = None
         record.visual_metadata = None
         record.visual_findings = None
+        record.criteria_results = None
+        record.decision = None
+        record.decision_summary = None
+        record.gemini_usage = None
+        record.gemini_cost_usd = None
+        record.gemini_cost_rub = None
+        record.processing_metrics = None
         record.markup_comment = None
         record.error_message = None
         record.started_at = None
