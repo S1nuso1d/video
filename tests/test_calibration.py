@@ -198,3 +198,31 @@ def test_empty_dataset_is_rejected(tmp_path):
 
     with pytest.raises(CalibrationDataError, match="no calibration samples"):
         load_calibration_dataset(dataset)
+
+
+def test_cli_writes_json_and_markdown_reports(tmp_path, capsys):
+    dataset = tmp_path / "benchmark.jsonl"
+    output_json = tmp_path / "reports" / "calibration.json"
+    output_markdown = tmp_path / "reports" / "calibration.md"
+    record = {
+        "sample_id": "cli-sample",
+        "expert": {"verdict": "candidate_accepted", "defects": []},
+        "prediction": {
+            "verdict": "candidate_accepted",
+            "detected_defects": [],
+            "technical_findings": [],
+            "visual_findings": [],
+        },
+    }
+    dataset.write_text(json.dumps(record) + chr(10), encoding="utf-8")
+
+    exit_code = calibration_cli_main([
+        "--input", str(dataset),
+        "--output", str(output_json),
+        "--markdown", str(output_markdown),
+    ])
+
+    assert exit_code == 0
+    assert json.loads(output_json.read_text(encoding="utf-8"))["sample_count"] == 1
+    assert "Calibration report" in output_markdown.read_text(encoding="utf-8")
+    assert "JSON report saved" in capsys.readouterr().out
