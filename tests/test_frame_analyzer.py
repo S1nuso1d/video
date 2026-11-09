@@ -141,6 +141,8 @@ class _FakeCV2:
     CMP_LE = 5
     INTER_AREA = 6
     THRESH_BINARY = 7
+    CV_64F = 8
+    IMWRITE_JPEG_QUALITY = 9
     __version__ = "test"
 
     def __init__(self, frames):
