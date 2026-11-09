@@ -181,3 +181,29 @@ def test_claim_skips_job_whose_retry_time_is_in_the_future(db_factory):
     assert claim_next_job("test-worker") is None
     record = _get_audit(db_factory, "future-audit")
     assert record.status == "pending"
+
+
+def test_stale_worker_cannot_start_processing_without_current_lease(db_factory, monkeypatch):
+    from app.services import processor
+
+    audit_id = _insert_audit(
+        db_factory,
+        status="processing",
+        attempt_count=1,
+        started_at=datetime.now(timezone.utc),
+        heartbeat_at=datetime.now(timezone.utc),
+        worker_id="new-worker",
+        lease_token="new-lease",
+    )
+    monkeypatch.setattr(processor, "SessionLocal", db_factory)
+
+    def unexpected_download(*args, **kwargs):
+        raise AssertionError("A worker with an expired lease must not download video")
+
+    monkeypatch.setattr(processor, "download_video", unexpected_download)
+
+    processor.process_audit(audit_id, "old-lease")
+
+    record = _get_audit(db_factory, audit_id)
+    assert record.status == "processing"
+    assert record.lease_token == "new-lease"
