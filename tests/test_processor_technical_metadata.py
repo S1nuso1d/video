@@ -102,6 +102,13 @@ def test_processor_persists_technical_evidence_before_gemini(
         "probe_video",
         lambda path: VideoProbeResult(metadata=metadata, findings=findings),
     )
+    monkeypatch.setattr(
+        processor,
+        "analyze_video_frames",
+        lambda path, duration_seconds=None: FrameAnalysisResult(
+            metadata=visual_metadata, findings=visual_findings
+        ),
+    )
 
     def fake_gemini(*args, **kwargs):
         with factory() as db:
