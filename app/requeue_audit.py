@@ -35,6 +35,8 @@ def main() -> int:
         record.detected_defects = None
         record.technical_metadata = None
         record.technical_findings = None
+        record.visual_metadata = None
+        record.visual_findings = None
         record.markup_comment = None
         record.error_message = None
         record.started_at = None
