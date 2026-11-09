@@ -13,7 +13,7 @@ Video Auditor is a preliminary video quality assessment application built with *
 - `yt-dlp`-based source acquisition with per-audit temporary directories, download timeout, and maximum file-size setting.
 - Temporary local video cleanup after processing, plus cleanup of abandoned temporary directories on worker startup.
 - **FFprobe technical metadata extraction** before the AI request: duration, file size, container, codec, resolution, pixel format, frame rates, bitrate, frame count, and audio stream metadata.
-- **OpenCV frame sampling** across the video timeline with a configurable sample cap and resized frames. It records timestamped near-black segments and sustained freeze-like regions as advisory evidence; these signals never change the final verdict by themselves.
+- **OpenCV frame sampling** across the video timeline with a configurable sample cap and resized frames. It records timestamped near-black segments, freeze-like regions, scene-change candidates, and sustained low-focus (possible blur) intervals as advisory evidence. Representative low-resolution JPEG previews are attached to findings within strict per-video count and size limits; these signals never change the final verdict by themselves.
 - Technical observations are stored separately from AI-detected defects. A missing audio stream is a warning; a measured duration below five seconds is recorded as an SFT finding. These observations are evidence, not an automatic final verdict.
 - If FFprobe is missing locally, processing can continue with a visible `ffprobe_unavailable` finding unless `FFPROBE_REQUIRED=true`.
 - Gemini file upload and processing-state polling before analysis.
@@ -61,7 +61,7 @@ FastAPI -> PostgreSQL (pending)
           Delete local temporary files
 ```
 
-Technical metadata and findings are available from the audit API response as `technical_metadata` and `technical_findings`. OpenCV sampling statistics and timestamped visual observations are exposed as `visual_metadata` and `visual_findings`. The local video is not intended to be retained as an application asset. The processor deletes the per-audit working directory in a `finally` block. A worker startup cleanup removes old abandoned directories left by an unclean shutdown.
+Technical metadata and findings are available from the audit API response as `technical_metadata` and `technical_findings`. OpenCV sampling statistics and timestamped visual observations are exposed as `visual_metadata` and `visual_findings`. Selected findings may contain `evidence.frames` with a timestamp, MIME type, and small base64 JPEG preview for manual inspection. The local video is not intended to be retained as an application asset. The processor deletes the per-audit working directory in a `finally` block. A worker startup cleanup removes old abandoned directories left by an unclean shutdown.
 
 ## Worker reliability model
 
@@ -197,6 +197,13 @@ All settings are loaded from `.env`.
 | `CV_FREEZE_CHANGED_PIXEL_RATIO` | `0.002` | Maximum changed-pixel ratio for freeze-like samples |
 | `CV_FREEZE_PIXEL_DELTA` | `3` | Per-pixel difference required to count as changed |
 | `CV_FREEZE_MIN_DURATION_SECONDS` | `2.5` | Minimum sampled freeze-like interval duration |
+| `CV_SCENE_CHANGE_THRESHOLD` | `0.65` | Histogram/pixel-change score for a possible scene transition |
+| `CV_BLUR_FOCUS_THRESHOLD` | `20` | Laplacian-variance threshold for low-focus candidates |
+| `CV_BLUR_MIN_DURATION_SECONDS` | `1.5` | Minimum sustained low-focus interval |
+| `CV_EVIDENCE_MAX_FRAMES` | `8` | Maximum preview frames stored per audit |
+| `CV_EVIDENCE_WIDTH` | `240` | Maximum preview width in pixels |
+| `CV_EVIDENCE_JPEG_QUALITY` | `45` | JPEG preview quality |
+| `CV_EVIDENCE_MAX_BYTES_PER_FRAME` | `12000` | Maximum encoded preview size per image |
 | `AUDIT_MAX_ATTEMPTS` | `2` | Maximum worker claims per audit |
 | `AUDIT_RETRY_DELAY_SECONDS` | `30` | Base worker retry delay |
 | `GEMINI_RATE_LIMIT_COOLDOWN_SECONDS` | `120` | Queue cooldown after HTTP 429 |
@@ -215,13 +222,13 @@ Run the automated tests from the active virtual environment:
 python -m pytest
 ```
 
-The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. FFprobe tests mock the executable and cover metadata parsing, rational frame rates, missing audio, short-duration findings, malformed responses, and timeouts. OpenCV tests use synthetic frame metrics and a fake capture source to verify black/freeze grouping, time evidence, sampling limits, and optional-dependency behavior. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video.
+The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. FFprobe tests mock the executable and cover metadata parsing, rational frame rates, missing audio, short-duration findings, malformed responses, and timeouts. OpenCV tests use synthetic frame metrics and a fake capture source to verify black/freeze grouping, scene-change and blur candidates, timestamp evidence previews, sampling limits, and optional-dependency behavior. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video.
 
 ## Important limitations and responsible use
 
 1. Gemini video analysis does not guarantee that every frame or every audio sample is inspected.
 2. Timestamps, affected duration estimates, and defect confidence can be inaccurate.
-3. A technical signal such as blur, low brightness, or repeated frames is not automatically a defect; thresholds must be calibrated against the SFT specification and reviewed examples. The initial OpenCV black/freeze detectors are conservative sampling-based indicators, can miss short events between samples, and can flag intentionally static or dark scenes.
+3. A technical signal such as blur, low brightness, or repeated frames is not automatically a defect; thresholds must be calibrated against the SFT specification and reviewed examples. The initial OpenCV black/freeze detectors are conservative sampling-based indicators, can miss short events between samples, and can flag intentionally static or dark scenes. Scene-change detection can confuse rapid camera/object movement with an edit. Blur uses Laplacian variance, which is content-dependent and is only a screening signal. JPEG evidence previews are stored inside the audit JSON record; apply an appropriate database retention policy because they may contain source-video content.
 4. Video downloading must comply with the source platform's terms, copyright, and the content owner's permissions. Only process material that the operator is authorized to download and analyze.
 5. Local temporary files are deleted after the processor finishes. As with any process, forced power loss or filesystem errors can leave temporary artifacts; startup cleanup is a recovery measure, not a guarantee against every storage failure.
 6. Do not expose the development API publicly without authentication, authorization, rate limiting, HTTPS, and appropriate data-retention controls.
