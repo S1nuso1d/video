@@ -89,6 +89,46 @@ def process_audit(audit_id: str, lease_token: str) -> None:
             ]
             logger.warning("Skipping technical metadata for audit %s: %s", audit_id, exc)
 
+        try:
+            frame_result = analyze_video_frames(
+                downloaded.path,
+                duration_seconds=(
+                    technical_metadata.get("duration_seconds")
+                    if technical_metadata
+                    else None
+                ),
+            )
+            visual_metadata = frame_result.metadata
+            visual_findings = frame_result.findings
+            logger.info(
+                "OpenCV sampled %s frames for audit %s and found %s visual observations",
+                visual_metadata.get("sampled_frames", 0),
+                audit_id,
+                len(visual_findings),
+            )
+        except VideoFrameAnalysisError as exc:
+            if settings.cv_analysis_required:
+                raise
+            visual_metadata = None
+            visual_code = (
+                "opencv_unavailable"
+                if isinstance(exc, OpenCVUnavailableError)
+                else "opencv_analysis_failed"
+            )
+            visual_findings = [
+                {
+                    "code": visual_code,
+                    "severity": "warning",
+                    "source": "system",
+                    "confidence": "high",
+                    "description": str(exc),
+                    "evidence": {},
+                }
+            ]
+            logger.warning(
+                "Skipping OpenCV frame analysis for audit %s: %s", audit_id, exc
+            )
+
         # Persist deterministic evidence before the expensive AI request. The
         # update is fenced so an expired worker cannot attach evidence to a new attempt.
         with SessionLocal() as db:
