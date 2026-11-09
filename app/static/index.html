@@ -98,6 +98,7 @@ function appendVisualEvidence(parent,a){
    node("span","tag","Шаг выборки: "+(Number.isFinite(visual.sample_interval_seconds)?visual.sample_interval_seconds.toFixed(2)+" сек":"—")),
    node("span","tag","OpenCV: "+(visual.opencv_version||"—"))
   );
+  if(Number.isFinite(visual.evidence_frames))tags.append(node("span","tag","Кадров-доказательств: "+visual.evidence_frames));
   if(visual.source_width&&visual.source_height)tags.append(node("span","tag","Исходный кадр: "+visual.source_width+" × "+visual.source_height));
   if(Number.isFinite(visual.source_fps))tags.append(node("span","tag","Источник: "+visual.source_fps.toFixed(2)+" FPS"));
   if(visual.sampling_was_capped)tags.append(node("span","tag","Достигнут лимит выборки"));
