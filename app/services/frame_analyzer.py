@@ -519,6 +519,7 @@ def analyze_video_frames(
 
             motion_mean_difference = None
             motion_changed_pixel_ratio = None
+            scene_change_score = None
             if previous_gray is not None and previous_gray.shape == gray.shape:
                 difference = cv2.absdiff(previous_gray, gray)
                 motion_mean_difference = float(cv2.mean(difference)[0])
@@ -531,6 +532,21 @@ def analyze_video_frames(
                 motion_changed_pixel_ratio = float(
                     cv2.countNonZero(changed_mask) / pixel_count
                 )
+                previous_hist = np.histogram(
+                    previous_gray, bins=32, range=(0, 256)
+                )[0].astype(np.float64)
+                current_hist = np.histogram(
+                    gray, bins=32, range=(0, 256)
+                )[0].astype(np.float64)
+                previous_hist /= max(1.0, float(previous_hist.sum()))
+                current_hist /= max(1.0, float(current_hist.sum()))
+                bhattacharyya = math.sqrt(
+                    max(0.0, 1.0 - float(np.sqrt(previous_hist * current_hist).sum()))
+                )
+                pixel_change = min(1.0, motion_mean_difference / 96.0) * 0.70
+                scene_change_score = max(bhattacharyya, pixel_change)
+
+            blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
             timestamp = (
                 frame_index / fps
