@@ -34,6 +34,8 @@ class AuditRecord(Base):
     detected_defects: Mapped[list | None] = mapped_column(JSON, nullable=True)
     technical_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     technical_findings: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    visual_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    visual_findings: Mapped[list | None] = mapped_column(JSON, nullable=True)
     markup_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

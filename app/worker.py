@@ -123,6 +123,8 @@ def claim_next_job(worker_id: str) -> WorkerClaim | None:
                 # while the current attempt is being evaluated.
                 record.technical_metadata = None
                 record.technical_findings = None
+                record.visual_metadata = None
+                record.visual_findings = None
                 record.updated_at = now
                 claim = WorkerClaim(
                     audit_id=record.id,

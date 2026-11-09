@@ -9,6 +9,7 @@ from app.models.audit import AuditRecord
 from app.services import processor
 from app.services.video_downloader import DownloadedVideo
 from app.services.video_probe import VideoProbeResult
+from app.services.frame_analyzer import FrameAnalysisResult, OpenCVUnavailableError
 
 
 def _make_db(tmp_path, monkeypatch):
@@ -75,6 +76,21 @@ def test_processor_persists_technical_evidence_before_gemini(
             "evidence": {},
         }
     ]
+    visual_metadata = {
+        "analyzer": "opencv",
+        "sampled_frames": 4,
+        "sample_interval_seconds": 0.5,
+    }
+    visual_findings = [
+        {
+            "code": "black_frame_segment",
+            "severity": "warning",
+            "source": "opencv",
+            "confidence": "medium",
+            "description": "Test visual observation",
+            "evidence": {"start_time_seconds": 0.0},
+        }
+    ]
 
     monkeypatch.setattr(
         processor,
@@ -86,6 +102,13 @@ def test_processor_persists_technical_evidence_before_gemini(
         "probe_video",
         lambda path: VideoProbeResult(metadata=metadata, findings=findings),
     )
+    monkeypatch.setattr(
+        processor,
+        "analyze_video_frames",
+        lambda path, duration_seconds=None: FrameAnalysisResult(
+            metadata=visual_metadata, findings=visual_findings
+        ),
+    )
 
     def fake_gemini(*args, **kwargs):
         with factory() as db:
@@ -94,6 +117,8 @@ def test_processor_persists_technical_evidence_before_gemini(
             )
             assert record.technical_metadata == metadata
             assert record.technical_findings == findings
+            assert record.visual_metadata == visual_metadata
+            assert record.visual_findings == visual_findings
         return _FakeReport()
 
     monkeypatch.setattr(processor, "analyze_youtube_video", fake_gemini)
@@ -106,6 +131,8 @@ def test_processor_persists_technical_evidence_before_gemini(
             assert record.status == "completed"
             assert record.technical_metadata == metadata
             assert record.technical_findings == findings
+            assert record.visual_metadata == visual_metadata
+            assert record.visual_findings == visual_findings
             assert record.markup_comment == "Предварительно подходит."
             assert record.verdict == "candidate_accepted"
         assert not work_dir.exists()
@@ -138,11 +165,18 @@ def test_processor_continues_when_ffprobe_is_optional_and_missing(
 
     monkeypatch.setattr(processor, "probe_video", unavailable)
 
+    def cv_unavailable(path, duration_seconds=None):
+        raise OpenCVUnavailableError("OpenCV missing in test")
+
+    monkeypatch.setattr(processor, "analyze_video_frames", cv_unavailable)
+
     def fake_gemini(*args, **kwargs):
         with factory() as db:
             record = db.get(AuditRecord, "audit-no-ffprobe")
             assert record.technical_metadata is None
             assert record.technical_findings[0]["code"] == "ffprobe_unavailable"
+            assert record.visual_metadata is None
+            assert record.visual_findings[0]["code"] == "opencv_unavailable"
         return _FakeReport()
 
     monkeypatch.setattr(processor, "analyze_youtube_video", fake_gemini)
@@ -154,6 +188,8 @@ def test_processor_continues_when_ffprobe_is_optional_and_missing(
             assert record.status == "completed"
             assert record.technical_metadata is None
             assert record.technical_findings[0]["code"] == "ffprobe_unavailable"
+            assert record.visual_metadata is None
+            assert record.visual_findings[0]["code"] == "opencv_unavailable"
         assert not work_dir.exists()
     finally:
         Base.metadata.drop_all(engine)
