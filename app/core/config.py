@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables and .env."""
 
-    project_name: str = "Video Auditor — SFT Stage 1"
+    project_name: str = "Video Auditor — Shared Analysis Workspace"
     database_url: str = (
         "postgresql+psycopg://video_auditor:video_auditor_dev_password@"
         "localhost:5433/video_auditor"
