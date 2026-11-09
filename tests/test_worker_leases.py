@@ -308,4 +308,4 @@ def test_recovery_finalizes_stale_cancellation_without_retry(db_factory):
     assert record.processing_stage is None
     assert record.worker_id is None
     assert record.lease_token is None
-    assert "cancelled" in record.error_message.lower()
+    assert "отменён" in record.error_message.lower()
