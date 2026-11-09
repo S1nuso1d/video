@@ -173,6 +173,20 @@ class _FakeCV2:
         mask = (image > threshold).astype(np.uint8) * max_value
         return threshold, mask
 
+    def Laplacian(self, image, _depth):
+        return _FakeLaplacian(np.var(image))
+
+    def imencode(self, _extension, _image, _options):
+        return True, np.frombuffer(b"fake-jpeg", dtype=np.uint8)
+
+
+@dataclass
+class _FakeLaplacian:
+    variance: float
+
+    def var(self):
+        return float(self.variance)
+
 
 def test_analyze_video_frames_samples_with_a_bounded_timeline(tmp_path, monkeypatch):
     path = tmp_path / "synthetic.mp4"
