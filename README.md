@@ -188,6 +188,7 @@ All settings are loaded from `.env`.
 | `CV_ANALYSIS_REQUIRED` | `false` | Fail the audit if OpenCV frame analysis cannot run |
 | `CV_SAMPLE_INTERVAL_SECONDS` | `0.5` | Target interval between sampled frames |
 | `CV_MAX_SAMPLES` | `1200` | Maximum number of frames sampled per video |
+| `CV_ANALYSIS_TIMEOUT_SECONDS` | `120` | Time budget for the OpenCV sampling stage |
 | `CV_RESIZE_WIDTH` | `320` | Maximum width used for analysis frames |
 | `CV_BLACK_LUMA_THRESHOLD` | `16` | Grayscale threshold for dark pixels (0–255) |
 | `CV_BLACK_PIXEL_RATIO` | `0.985` | Minimum dark-pixel ratio for a black-frame candidate |
