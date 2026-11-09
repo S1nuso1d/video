@@ -80,6 +80,8 @@ class Settings(BaseSettings):
             raise ValueError("CV_SAMPLE_INTERVAL_SECONDS must be greater than 0")
         if self.cv_max_samples < 2:
             raise ValueError("CV_MAX_SAMPLES must be at least 2")
+        if self.cv_analysis_timeout_seconds < 1:
+            raise ValueError("CV_ANALYSIS_TIMEOUT_SECONDS must be at least 1")
         if self.cv_resize_width < 64:
             raise ValueError("CV_RESIZE_WIDTH must be at least 64")
         if not 0 <= self.cv_black_luma_threshold <= 255:
