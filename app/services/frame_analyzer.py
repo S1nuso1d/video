@@ -11,6 +11,7 @@ import base64
 import logging
 import math
 import time
+from typing import Callable
 
 import numpy as np
 from dataclasses import dataclass
@@ -407,6 +408,8 @@ def _attach_evidence_frames(
 def analyze_video_frames(
     path: Path,
     duration_seconds: float | None = None,
+    *,
+    cancel_check: Callable[[], None] | None = None,
 ) -> FrameAnalysisResult:
     """Sample a bounded set of frames and detect black/freeze-like intervals."""
     if cv2 is None:
@@ -474,18 +477,37 @@ def analyze_video_frames(
         analysis_started_at = time.monotonic()
         original_width = None
         original_height = None
+        current_frame_index = -1
 
         for frame_index in frame_indices:
+            if cancel_check is not None:
+                cancel_check()
             if time.monotonic() - analysis_started_at > settings.cv_analysis_timeout_seconds:
                 raise VideoFrameAnalysisError(
                     "Превышено время ограниченного анализа видеокадров (OpenCV)."
                 )
-            positioned = capture.set(cv2.CAP_PROP_POS_FRAMES, float(frame_index))
-            if not positioned and frame_index > 0:
-                raise VideoFrameAnalysisError(
-                    "OpenCV не поддерживает точную выборку кадров для этого видео."
-                )
-            ok, frame = capture.read()
+            # Decode forward once and use grab() to skip non-sampled frames.
+            # Repeated random seeks force inter-frame codecs to decode the same
+            # GOPs over and over, which is especially expensive on long videos.
+            if hasattr(capture, "grab") and hasattr(capture, "retrieve"):
+                reached_target = True
+                while current_frame_index < frame_index:
+                    if not capture.grab():
+                        reached_target = False
+                        break
+                    current_frame_index += 1
+                if not reached_target:
+                    continue
+                ok, frame = capture.retrieve()
+            else:
+                # Keep compatibility with small test doubles and alternate
+                # capture implementations that expose only read()/set().
+                positioned = capture.set(cv2.CAP_PROP_POS_FRAMES, float(frame_index))
+                if not positioned and frame_index > 0:
+                    raise VideoFrameAnalysisError(
+                        "OpenCV не поддерживает точную выборку кадров для этого видео."
+                    )
+                ok, frame = capture.read()
             if not ok or frame is None:
                 logger.debug(
                     "OpenCV could not read sampled frame %s from %s",
@@ -603,6 +625,8 @@ def analyze_video_frames(
             "sampling_was_capped": len(frame_indices) >= max_samples,
             "analysis_resolution_width": min(resize_width, original_width or resize_width),
         }
+        if cancel_check is not None:
+            cancel_check()
         findings = _build_findings(samples, actual_interval, duration)
         evidence_frame_count = _attach_evidence_frames(findings, samples, capture)
         metadata["evidence_frames"] = evidence_frame_count

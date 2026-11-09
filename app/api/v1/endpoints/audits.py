@@ -55,6 +55,46 @@ def list_audits(
     return list(db.scalars(statement).all())
 
 
+@router.post("/{audit_id}/cancel", response_model=AuditResponse)
+def cancel_audit(
+    audit_id: str,
+    db: Session = Depends(get_db),
+    user: UserAccount = Depends(require_roles("admin", "operator")),
+) -> AuditRecord:
+    """Cancel a queued job immediately or request cooperative worker cancellation."""
+    record = db.scalar(
+        select(AuditRecord)
+        .where(AuditRecord.id == audit_id)
+        .with_for_update()
+    )
+    if record is None or (
+        user.role == "operator" and record.created_by_user_id != user.id
+    ):
+        raise HTTPException(status_code=404, detail="Audit record not found")
+
+    now = datetime.now(timezone.utc)
+    if record.status == "pending":
+        record.status = "cancelled"
+        record.processing_stage = None
+        record.error_message = "Анализ отменён пользователем."
+        record.next_retry_at = None
+        record.completed_at = now
+        record.updated_at = now
+    elif record.status == "processing":
+        record.status = "cancelling"
+        record.error_message = "Запрошена отмена анализа."
+        record.updated_at = now
+    elif record.status not in {"cancelling", "cancelled"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Нельзя отменить уже завершённый анализ.",
+        )
+
+    db.commit()
+    db.refresh(record)
+    return record
+
+
 @router.get("/{audit_id}", response_model=AuditResponse)
 def get_audit(
     audit_id: str,

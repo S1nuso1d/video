@@ -13,6 +13,8 @@ class Settings(BaseSettings):
         "localhost:5433/video_auditor"
     )
     gemini_api_key: str = ""
+    # Google YouTube URL input is a preview feature; set false to upload local files.
+    gemini_youtube_direct: bool = True
     # Authentication is disabled until a strong secret is configured.
     # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
     auth_secret_key: str = ""

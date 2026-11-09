@@ -196,6 +196,7 @@ def test_stale_worker_cannot_start_processing_without_current_lease(db_factory, 
         lease_token="new-lease",
     )
     monkeypatch.setattr(processor, "SessionLocal", db_factory)
+    monkeypatch.setattr("app.services.cancellation.SessionLocal", db_factory)
 
     def unexpected_download(*args, **kwargs):
         raise AssertionError("A worker with an expired lease must not download video")
@@ -226,6 +227,7 @@ def test_expired_worker_cannot_overwrite_result_after_lease_changes(db_factory, 
         lease_token="old-lease",
     )
     monkeypatch.setattr(processor, "SessionLocal", db_factory)
+    monkeypatch.setattr("app.services.cancellation.SessionLocal", db_factory)
     work_dir = tmp_path / "audit-work"
     work_dir.mkdir()
     video_path = work_dir / "video.mp4"
@@ -264,3 +266,46 @@ def test_expired_worker_cannot_overwrite_result_after_lease_changes(db_factory, 
     assert record.lease_token == "new-lease"
     assert record.report is None
     assert not work_dir.exists()
+
+
+
+def test_refresh_job_lease_keeps_cancelling_job_alive(db_factory):
+    now = datetime.now(timezone.utc)
+    audit_id = _insert_audit(
+        db_factory,
+        status="cancelling",
+        attempt_count=1,
+        started_at=now,
+        heartbeat_at=now - timedelta(seconds=20),
+        worker_id="live-worker",
+        lease_token="cancel-lease",
+    )
+
+    assert refresh_job_lease(audit_id, "cancel-lease") is True
+    record = _get_audit(db_factory, audit_id)
+    assert record.status == "cancelling"
+    assert record.heartbeat_at is not None
+    assert record.lease_token == "cancel-lease"
+
+
+def test_recovery_finalizes_stale_cancellation_without_retry(db_factory):
+    now = datetime.now(timezone.utc)
+    audit_id = _insert_audit(
+        db_factory,
+        status="cancelling",
+        attempt_count=1,
+        started_at=now - timedelta(minutes=5),
+        heartbeat_at=now - timedelta(minutes=5),
+        worker_id="dead-worker",
+        lease_token="cancel-lease",
+    )
+
+    assert recover_stale_jobs(now=now) == 1
+    record = _get_audit(db_factory, audit_id)
+    assert record.status == "cancelled"
+    assert record.completed_at is not None
+    assert record.next_retry_at is None
+    assert record.processing_stage is None
+    assert record.worker_id is None
+    assert record.lease_token is None
+    assert "отменён" in record.error_message.lower()

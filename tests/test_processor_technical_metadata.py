@@ -17,6 +17,7 @@ def _make_db(tmp_path, monkeypatch):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     monkeypatch.setattr(processor, "SessionLocal", factory)
+    monkeypatch.setattr("app.services.cancellation.SessionLocal", factory)
     return engine, factory
 
 
@@ -105,7 +106,7 @@ def test_processor_persists_technical_evidence_before_gemini(
     monkeypatch.setattr(
         processor,
         "analyze_video_frames",
-        lambda path, duration_seconds=None: FrameAnalysisResult(
+        lambda path, duration_seconds=None, cancel_check=None: FrameAnalysisResult(
             metadata=visual_metadata, findings=visual_findings
         ),
     )
@@ -165,7 +166,7 @@ def test_processor_continues_when_ffprobe_is_optional_and_missing(
 
     monkeypatch.setattr(processor, "probe_video", unavailable)
 
-    def cv_unavailable(path, duration_seconds=None):
+    def cv_unavailable(path, duration_seconds=None, cancel_check=None):
         raise OpenCVUnavailableError("OpenCV missing in test")
 
     monkeypatch.setattr(processor, "analyze_video_frames", cv_unavailable)

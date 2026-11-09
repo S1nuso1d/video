@@ -9,6 +9,11 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.audit import AuditRecord
 from app.models.review import HumanReviewEvent
+from app.services.cancellation import (
+    AuditCancelled,
+    AuditLeaseLost,
+    check_audit_cancellation,
+)
 from app.services.gemini_auditor import (
     GeminiAuditError,
     GeminiAuditResult,
@@ -41,28 +46,57 @@ from app.services.frame_analyzer import (
 logger = logging.getLogger(__name__)
 
 
+def _set_processing_stage(audit_id: str, lease_token: str, stage: str) -> None:
+    check_audit_cancellation(audit_id, lease_token)
+    with SessionLocal() as db:
+        result = db.execute(
+            update(AuditRecord)
+            .where(
+                AuditRecord.id == audit_id,
+                AuditRecord.status == "processing",
+                AuditRecord.lease_token == lease_token,
+            )
+            .values(
+                processing_stage=stage,
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        db.commit()
+        if result.rowcount != 1:
+            check_audit_cancellation(audit_id, lease_token)
+            raise AuditLeaseLost("Worker lease changed before stage start.")
+
+
 def process_audit(audit_id: str, lease_token: str) -> None:
     """Process an audit only while the supplied worker lease remains valid."""
     with SessionLocal() as db:
         record = db.scalar(
             select(AuditRecord).where(
                 AuditRecord.id == audit_id,
-                AuditRecord.status == "processing",
+                AuditRecord.status.in_(("processing", "cancelling")),
                 AuditRecord.lease_token == lease_token,
             )
         )
-        if record is None:
+        if record is None or record.status not in {"processing", "cancelling"}:
             logger.warning(
                 "Skipping audit %s because this worker no longer owns its lease",
                 audit_id,
             )
             return
+        cancelled_before_start = record.status == "cancelling"
         youtube_url = record.youtube_url
         content_type = record.content_type
         criteria_spec = record.criteria_spec
         current_attempt = int(record.attempt_count or 0)
         previous_usage = record.gemini_usage
         previous_metrics = record.processing_metrics
+
+    if cancelled_before_start:
+        try:
+            check_audit_cancellation(audit_id, lease_token)
+        except AuditCancelled as exc:
+            logger.info("Audit %s cancelled before processing started: %s", audit_id, exc)
+        return
 
     downloaded: DownloadedVideo | None = None
     attempt_started = time.perf_counter()
@@ -71,12 +105,22 @@ def process_audit(audit_id: str, lease_token: str) -> None:
     stage_durations: dict[str, float] = {}
     attempt_usage: dict[str, int | None] | None = None
     request_made = False
+
+    def check_cancelled() -> None:
+        check_audit_cancellation(audit_id, lease_token)
+
     try:
+        check_cancelled()
         logger.info("Downloading source video for audit %s", audit_id)
+        _set_processing_stage(audit_id, lease_token, "download")
         active_stage = "download"
         stage_started = time.perf_counter()
-        downloaded = download_video(youtube_url, audit_id)
+        downloaded = download_video(
+            youtube_url, audit_id, cancel_check=check_cancelled
+        )
         stage_durations["download"] = round(time.perf_counter() - stage_started, 3)
+        logger.info("Audit %s stage download completed in %.3fs", audit_id, stage_durations["download"])
+        check_cancelled()
         active_stage = None
         stage_started = None
         downloaded_size = downloaded.path.stat().st_size
@@ -87,9 +131,12 @@ def process_audit(audit_id: str, lease_token: str) -> None:
         )
 
         try:
+            check_cancelled()
+            _set_processing_stage(audit_id, lease_token, "ffprobe")
             active_stage = "ffprobe"
             stage_started = time.perf_counter()
             probe_result = probe_video(downloaded.path)
+            check_cancelled()
             technical_metadata = probe_result.metadata
             technical_findings = probe_result.findings
             logger.info(
@@ -118,10 +165,13 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 stage_durations["ffprobe"] = round(
                     time.perf_counter() - stage_started, 3
                 )
+                logger.info("Audit %s stage ffprobe completed in %.3fs", audit_id, stage_durations["ffprobe"])
                 active_stage = None
                 stage_started = None
 
         try:
+            check_cancelled()
+            _set_processing_stage(audit_id, lease_token, "opencv")
             active_stage = "opencv"
             stage_started = time.perf_counter()
             frame_result = analyze_video_frames(
@@ -131,7 +181,9 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                     if technical_metadata
                     else None
                 ),
+                cancel_check=check_cancelled,
             )
+            check_cancelled()
             visual_metadata = frame_result.metadata
             visual_findings = frame_result.findings
             logger.info(
@@ -167,9 +219,11 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 stage_durations["opencv"] = round(
                     time.perf_counter() - stage_started, 3
                 )
+                logger.info("Audit %s stage opencv completed in %.3fs", audit_id, stage_durations["opencv"])
                 active_stage = None
                 stage_started = None
 
+        check_cancelled()
         # Persist deterministic evidence before the expensive AI request. The
         # update is fenced so an expired worker cannot attach evidence to a new attempt.
         with SessionLocal() as db:
@@ -190,20 +244,24 @@ def process_audit(audit_id: str, lease_token: str) -> None:
             )
             db.commit()
             if saved.rowcount != 1:
-                logger.warning(
-                    "Stopping audit %s because its lease changed before AI analysis",
-                    audit_id,
-                )
-                return
+                check_cancelled()
+                raise AuditLeaseLost("Worker lease changed before AI analysis.")
 
+        check_cancelled()
+        _set_processing_stage(audit_id, lease_token, "gemini")
         active_stage = "gemini"
         stage_started = time.perf_counter()
         gemini_result = analyze_youtube_video(
             youtube_url,
             content_type,
-            local_video_path=downloaded.path,
+            local_video_path=(
+                None if settings.gemini_youtube_direct else downloaded.path
+            ),
+            cancel_check=check_cancelled,
         )
+        check_cancelled()
         stage_durations["gemini"] = round(time.perf_counter() - stage_started, 3)
+        logger.info("Audit %s stage gemini completed in %.3fs", audit_id, stage_durations["gemini"])
         active_stage = None
         stage_started = None
         if isinstance(gemini_result, GeminiAuditResult):
@@ -251,6 +309,7 @@ def process_audit(audit_id: str, lease_token: str) -> None:
             stage_durations=stage_durations,
             total_seconds=time.perf_counter() - attempt_started,
         )
+        check_cancelled()
         now = datetime.now(timezone.utc)
         with SessionLocal() as db:
             result = db.execute(
@@ -290,6 +349,7 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                     human_reviewed_by_user_id=None,
                     human_reviewed_at=None,
                     status="completed",
+                    processing_stage=None,
                     error_message=None,
                     next_retry_at=None,
                     heartbeat_at=None,
@@ -313,11 +373,8 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 )
             db.commit()
             if result.rowcount != 1:
-                logger.warning(
-                    "Discarded result for audit %s because the worker lease expired",
-                    audit_id,
-                )
-                return
+                check_cancelled()
+                raise AuditLeaseLost("Worker lease changed before result commit.")
 
         logger.info(
             "Audit %s completed with verdict=%s project_decision=%s",
@@ -325,7 +382,14 @@ def process_audit(audit_id: str, lease_token: str) -> None:
             report.verdict.value,
             project_decision or "not_configured",
         )
+    except (AuditCancelled, AuditLeaseLost) as exc:
+        logger.info("Audit %s stopped without retry: %s", audit_id, exc)
     except Exception as exc:
+        try:
+            check_cancelled()
+        except (AuditCancelled, AuditLeaseLost) as stop_exc:
+            logger.info("Audit %s stopped without retry after concurrent error: %s", audit_id, stop_exc)
+            return
         if active_stage is not None and stage_started is not None:
             stage_durations[active_stage] = round(
                 time.perf_counter() - stage_started, 3
@@ -401,6 +465,7 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                     ),
                     processing_metrics=processing_metrics,
                     updated_at=now,
+                    processing_stage=None,
                     status="pending" if will_retry else "failed",
                     next_retry_at=next_retry_at,
                     completed_at=None if will_retry else now,

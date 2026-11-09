@@ -50,6 +50,7 @@ class AuditRecord(Base):
         String(32), nullable=False, default="unknown"
     )
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
+    processing_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     report: Mapped[dict | None] = mapped_column(JSON, nullable=True)

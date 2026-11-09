@@ -85,7 +85,8 @@ let accessToken=sessionStorage.getItem("videoAuditorToken")||null;
 let currentUser=null,reviewerOptions=[];
 let adminOverview=null,adminUsers=[];
 const roleLabels={admin:"Администратор",operator:"Оператор",reviewer:"Ревьюер"};
-const statusText={pending:"В очереди",processing:"Выполняется",completed:"Завершено",failed:"Ошибка"};
+const statusText={pending:"В очереди",processing:"Выполняется",cancelling:"Отмена…",cancelled:"Отменено",completed:"Завершено",failed:"Ошибка"};
+const stageText={download:"Скачивание исходника",ffprobe:"Техническая проверка",opencv:"Анализ кадров OpenCV",gemini:"Анализ Gemini"};
 const verdictText={candidate_accepted:"Предварительно подходит",candidate_rejected:"Предварительно отклонено",manual_review_required:"Нужна ручная проверка"};
 const verdictClass={candidate_accepted:"accepted",candidate_rejected:"rejected",manual_review_required:"manual"};
 const categories={watermark_or_overlay:"Водяной знак / наложенный текст",collage:"Коллаж из разных видео",non_monochrome_border:"Необычная рамка",unclear_or_fractal_content:"Неясное содержание / фракталы",excessive_camera_shake:"Сильная тряска камеры",frequent_cuts_under_5s:"Частые склейки короче 5 секунд",blockiness_pixelation_posterization:"Блочность / пикселизация / постеризация",low_complexity_or_monotony:"Низкая сложность / монотонность",strong_background_blur:"Сильное размытие",lens_drops_obstructing_subject:"Капли / пыль закрывают объект",double_exposure:"Двойная экспозиция",foreground_artifact:"Артефакт переднего плана",mirrored_or_flipped:"Отражение / переворот",ghosting_or_contour_flicker:"Гостинг / мерцание контуров",full_frame_blur_over_1s:"Расфокус всего кадра",severe_color_distortion:"Искажение цветопередачи",lens_flare_or_light_flicker:"Блики / мерцание света",ai_generated_or_edited:"Возможная ИИ-генерация / редактирование",severe_overexposure_or_darkness:"Пересвет / чрезмерная темнота",video_under_5_seconds:"Видео короче 5 секунд",inappropriate_speed_change:"Неподходящая смена скорости",aspect_ratio_distortion:"Растяжение / сплющивание",stutter_or_low_fps:"Подтормаживание / низкий FPS",old_film_effect:"Эффект старой плёнки",compression_artifacts:"Артефакты сжатия",photo_slideshow:"Слайд-шоу фотографий",unnatural_green_screen_composite:"Неестественная вклейка на фон",low_dynamics:"Низкая динамика",audio_distortion:"Искажение звука",audio_background_noise:"Посторонний шум / гул / шипение",audio_desync_or_echo:"Рассинхронизация / эхо",dubbed_or_mismatched_audio:"Несоответствующая озвучка",voiceover_masks_target_sound:"Голос / музыка перекрывает целевой звук",target_sound_source_not_visible:"Источник звука не виден",animation_anatomy_error:"Анатомические ошибки в анимации",animation_lip_sync:"Несовпадение артикуляции со звуком",flat_2d_animation:"Плоская 2D-анимация",animation_aesthetic_or_style:"Эстетика / цельность анимации",excluded_content_category:"Исключённая категория контента",other:"Другой дефект"};
@@ -249,7 +250,7 @@ async function exportAdminCsv(){
 }
 async function loadReviewerOptions(){try{reviewerOptions=await api("/api/v1/auth/reviewers")}catch(e){reviewerOptions=[]}}
 async function loadReviewQueue(){
- if(!currentUser||currentUser.role==="operator")return;
+ if(!currentUser||currentUser.role==="operator"||a.status!=="completed")return;
  const list=$("reviewQueueList");if(!list)return;
  try{renderReviewQueue(await api("/api/v1/reviews/queue?limit=50"))}
  catch(e){list.replaceChildren(node("div","empty",errText(e)))}
@@ -283,7 +284,7 @@ function renderReviewQueue(items){
  });
 }
 function appendReviewControls(parent,a){
- if(!currentUser||currentUser.role==="operator")return;
+ if(!currentUser||currentUser.role==="operator"||a.status!=="completed")return;
  const section=node("div","comment");section.append(node("div","label","Ручная проверка"));
  const tags=node("div","tags");tags.append(node("span","tag",reviewStatusLabels[a.review_status]||a.review_status||"Не требуется"));
  if(a.human_review_decision)tags.append(node("span","tag passed",humanDecisionLabels[a.human_review_decision]||a.human_review_decision));
@@ -326,10 +327,10 @@ async function appendReviewHistory(parent,a){
   section.append(list);parent.append(section);
  }catch(e){if(selected===a.id)parent.append(node("div","defect-time","Не удалось загрузить историю: "+errText(e)))}
 }
-function renderHistory(){history.replaceChildren();if(!cache.length){history.append(node("div","empty","Проверок пока нет. Создай первый аудит по ссылке YouTube."));return}cache.forEach(a=>{const b=node("button","history-item"+(a.id===selected?" active":""));b.type="button";const icon=node("span","h-icon");icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg>';const info=node("span","h-info");info.append(node("div","h-title",a.video_id||"YouTube-видео"));const meta=node("div","h-meta");meta.append(statusPill(a.status));if(a.status==="completed"&&a.verdict)meta.append(verdictPill(a.verdict));if(a.decision)meta.append(decisionPill(a.decision));info.append(meta);b.append(icon,info);b.addEventListener("click",()=>openAudit(a.id));history.append(b)})}
-function stop(){if(timer)clearTimeout(timer);timer=null}function poll(){stop();timer=setTimeout(refreshCurrent,8000)}
-async function refreshCurrent(){await loadHistory();await loadReviewQueue();await health();if(selected){try{const a=await api("/api/v1/audits/"+encodeURIComponent(selected));renderResult(a);if(a.status==="pending"||a.status==="processing")poll();else stop()}catch(e){renderError(errText(e))}}}
-async function openAudit(id){selected=id;renderHistory();result.replaceChildren(node("div","loading","Загружаем результат…"));try{const a=await api("/api/v1/audits/"+encodeURIComponent(id));renderResult(a);if(a.status==="pending"||a.status==="processing")poll();else stop();renderHistory()}catch(e){stop();renderError(errText(e))}}
+function renderHistory(){history.replaceChildren();if(!cache.length){history.append(node("div","empty","Проверок пока нет. Создай первый аудит по ссылке YouTube."));return}cache.forEach(a=>{const b=node("button","history-item"+(a.id===selected?" active":""));b.type="button";const icon=node("span","h-icon");icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg>';const info=node("span","h-info");info.append(node("div","h-title",a.video_id||"YouTube-видео"));const meta=node("div","h-meta");meta.append(statusPill(a.status));if(a.processing_stage)meta.append(node("span","tag",stageText[a.processing_stage]||a.processing_stage));if(a.status==="completed"&&a.verdict)meta.append(verdictPill(a.verdict));if(a.decision)meta.append(decisionPill(a.decision));info.append(meta);b.append(icon,info);b.addEventListener("click",()=>openAudit(a.id));history.append(b)})}
+function stop(){if(timer)clearTimeout(timer);timer=null}function poll(){stop();timer=setTimeout(refreshCurrent,5000)}
+async function refreshCurrent(){if(!selected)return;try{const a=await api("/api/v1/audits/"+encodeURIComponent(selected));const cached=cache.find(item=>item.id===a.id);const oldStatus=cached?cached.status:null;const oldStage=cached?cached.processing_stage:null;if(cached){cached.status=a.status;cached.processing_stage=a.processing_stage;cached.verdict=a.verdict;cached.decision=a.decision;if(oldStatus!==a.status||oldStage!==a.processing_stage)renderHistory()}renderResult(a);if(oldStatus!==a.status){await loadHistory();if(currentUser&&currentUser.role!=="operator")await loadReviewQueue()}if(["pending","processing","cancelling"].includes(a.status))poll();else stop()}catch(e){renderError(errText(e))}}
+async function openAudit(id){selected=id;renderHistory();result.replaceChildren(node("div","loading","Загружаем результат…"));try{const a=await api("/api/v1/audits/"+encodeURIComponent(id));const cached=cache.find(item=>item.id===a.id);if(cached){cached.status=a.status;cached.processing_stage=a.processing_stage}renderResult(a);if(["pending","processing","cancelling"].includes(a.status))poll();else stop();renderHistory()}catch(e){stop();renderError(errText(e))}}
 function renderError(text){subtitle.textContent="Не удалось загрузить";result.replaceChildren(node("div","message show error",text))}
 function appendTechnicalEvidence(parent,a){
  const technical=a.technical_metadata||null;
@@ -508,11 +509,24 @@ function appendCostMetrics(parent,a){
 }
 function addList(parent,title,items){if(!Array.isArray(items)||!items.length)return;parent.append(node("div","section-title",title));const ul=node("ul","plain-list");items.forEach(x=>ul.append(node("li","",x)));parent.append(ul)}
 function renderResult(a){
-result.replaceChildren();subtitle.textContent="ID: "+a.id;const head=node("div","result-head"),about=node("div");about.append(node("h3","",a.video_id?"Видео "+a.video_id:"Аудит видео"));const link=node("a","result-url",a.youtube_url||"");link.href=a.youtube_url||"#";link.target="_blank";link.rel="noreferrer";about.append(link);const status=node("div");status.append(statusPill(a.status));if(a.status==="completed"&&a.verdict){status.append(document.createTextNode(" "));status.append(verdictPill(a.verdict))}if(a.decision){status.append(document.createTextNode(" "));status.append(decisionPill(a.decision))}head.append(about,status);result.append(head);
+result.replaceChildren();subtitle.textContent="ID: "+a.id;const head=node("div","result-head"),about=node("div");about.append(node("h3","",a.video_id?"Видео "+a.video_id:"Аудит видео"));const link=node("a","result-url",a.youtube_url||"");link.href=a.youtube_url||"#";link.target="_blank";link.rel="noreferrer";about.append(link);const status=node("div");status.append(statusPill(a.status));if(a.processing_stage)status.append(node("span","tag",stageText[a.processing_stage]||a.processing_stage));if(a.status==="completed"&&a.verdict){status.append(document.createTextNode(" "));status.append(verdictPill(a.verdict))}if(a.decision){status.append(document.createTextNode(" "));status.append(decisionPill(a.decision))}head.append(about,status);result.append(head);
 appendTechnicalEvidence(result,a);appendVisualEvidence(result,a);appendCriteriaResults(result,a);
 appendCostMetrics(result,a);appendReviewControls(result,a);
-if(a.status==="pending"||a.status==="processing"){const box=node("div","comment"),line=node("div","loading");line.append(node("span","spinner"),document.createTextNode(a.status==="pending"?"Задание в очереди. Ожидаем worker…":"Модель анализирует видео. Это может занять несколько минут…"));box.append(line,node("div","comment-text","Статус обновится автоматически. Не отправляй ту же ссылку повторно."));result.append(box);return}
+if(["pending","processing","cancelling"].includes(a.status)){
+ const box=node("div","comment"),line=node("div","loading");
+ const waiting=a.status==="pending",cancelling=a.status==="cancelling";
+ const activity=cancelling?"Останавливаем анализ…":(waiting?"Задание в очереди. Ожидаем worker…":("Выполняется: "+(stageText[a.processing_stage]||"подготовка")+"."));
+ line.append(node("span","spinner"),document.createTextNode(activity));
+ box.append(line,node("div","comment-text",cancelling?"Worker завершает текущий этап и очищает временные файлы.":"Этап отображается по мере выполнения. Не отправляй ту же ссылку повторно."));
+ if(!cancelling&&currentUser&&(currentUser.role==="admin"||currentUser.role==="operator")){
+  const actions=node("div","review-actions"),cancel=node("button","secondary","Отменить анализ");cancel.type="button";
+  cancel.addEventListener("click",async()=>{cancel.disabled=true;cancel.textContent="Отправляем запрос…";try{const updated=await api("/api/v1/audits/"+encodeURIComponent(a.id)+"/cancel",{method:"POST"});renderResult(updated);await loadHistory();if(updated.status==="cancelling")poll();else stop()}catch(e){cancel.disabled=false;cancel.textContent="Отменить анализ";alert(errText(e))}});
+  actions.append(cancel);box.append(actions);
+ }
+ result.append(box);return
+}
 if(a.status==="failed"){result.append(node("div","message show error",a.error_message||"Аудит завершился с ошибкой. Проверь журнал worker."));return}
+if(a.status==="cancelled"){result.append(node("div","message show info",a.error_message||"Анализ отменён пользователем."));return}
 const r=a.report||{},summary=r.summary||a.summary;if(summary)result.append(node("p","summary",summary));
 const comment=r.markup_comment||a.markup_comment;if(comment){const box=node("div","comment");box.append(node("div","label","Комментарий для разметки"),node("div","comment-text",comment));const copy=node("button","secondary","Скопировать комментарий");copy.type="button";copy.style.marginTop="11px";copy.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(comment);copy.textContent="Скопировано"}catch(_){copy.textContent="Не удалось скопировать"}});box.append(copy);result.append(box)}
 const meta=node("div","tags");meta.append(node("span","tag","Тип: "+(types[a.content_type]||a.content_type||"Не указан")));if(r.review_coverage)meta.append(node("span","tag","Покрытие: "+(coverage[r.review_coverage]||r.review_coverage)));const defects=Array.isArray(r.detected_defects)?r.detected_defects:(a.detected_defects||[]);meta.append(node("span","tag","Дефектов: "+defects.length));result.append(meta);
