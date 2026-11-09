@@ -75,6 +75,26 @@ class Settings(BaseSettings):
             raise ValueError("WORKER_RECOVERY_INTERVAL_SECONDS must be at least 1")
         if self.ffprobe_timeout_seconds < 1:
             raise ValueError("FFPROBE_TIMEOUT_SECONDS must be at least 1")
+        if self.cv_sample_interval_seconds <= 0:
+            raise ValueError("CV_SAMPLE_INTERVAL_SECONDS must be greater than 0")
+        if self.cv_max_samples < 2:
+            raise ValueError("CV_MAX_SAMPLES must be at least 2")
+        if self.cv_resize_width < 64:
+            raise ValueError("CV_RESIZE_WIDTH must be at least 64")
+        if not 0 <= self.cv_black_luma_threshold <= 255:
+            raise ValueError("CV_BLACK_LUMA_THRESHOLD must be between 0 and 255")
+        if not 0 < self.cv_black_pixel_ratio <= 1:
+            raise ValueError("CV_BLACK_PIXEL_RATIO must be in (0, 1]")
+        if self.cv_black_min_duration_seconds <= 0:
+            raise ValueError("CV_BLACK_MIN_DURATION_SECONDS must be greater than 0")
+        if self.cv_freeze_mean_diff_threshold < 0:
+            raise ValueError("CV_FREEZE_MEAN_DIFF_THRESHOLD must be non-negative")
+        if not 0 <= self.cv_freeze_changed_pixel_ratio <= 1:
+            raise ValueError("CV_FREEZE_CHANGED_PIXEL_RATIO must be between 0 and 1")
+        if not 0 <= self.cv_freeze_pixel_delta <= 255:
+            raise ValueError("CV_FREEZE_PIXEL_DELTA must be between 0 and 255")
+        if self.cv_freeze_min_duration_seconds <= 0:
+            raise ValueError("CV_FREEZE_MIN_DURATION_SECONDS must be greater than 0")
         return self
 
     model_config = SettingsConfigDict(
