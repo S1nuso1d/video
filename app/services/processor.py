@@ -130,6 +130,7 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                     detected_defects=[
                         item.model_dump(mode="json") for item in report.detected_defects
                     ],
+                    markup_comment=report.markup_comment,
                     status="completed",
                     error_message=None,
                     next_retry_at=None,
