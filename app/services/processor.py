@@ -142,6 +142,8 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 .values(
                     technical_metadata=technical_metadata,
                     technical_findings=technical_findings,
+                    visual_metadata=visual_metadata,
+                    visual_findings=visual_findings,
                     updated_at=datetime.now(timezone.utc),
                 )
             )
