@@ -16,7 +16,7 @@ from app.models.user import UserAccount  # Register legacy foreign-key table for
 
 @pytest.fixture()
 def review_client(monkeypatch) -> Generator[tuple[TestClient, sessionmaker], None, None]:
-    monkeypatch.setattr(settings, "workspace_access_key", "shared-team-secret")
+    monkeypatch.setattr(settings, "workspace_access_key", "shared-workspace-key-for-tests-with-at-least-32-characters")
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -41,7 +41,7 @@ def review_client(monkeypatch) -> Generator[tuple[TestClient, sessionmaker], Non
 
 
 def headers() -> dict[str, str]:
-    return {"Authorization": "Bearer shared-team-secret"}
+    return {"Authorization": "Bearer shared-workspace-key-for-tests-with-at-least-32-characters"}
 
 
 def create_audit(factory, *, review_status: str = "pending", video_id: str = "dQw4w9WgXcQ") -> str:
