@@ -11,6 +11,7 @@ from app.core.logging_config import configure_logging
 from app.core.database import SessionLocal
 from app.models.audit import AuditRecord
 from app.services.processor import process_audit
+from app.services.video_downloader import cleanup_abandoned_temp_dirs
 
 configure_logging()
 logger = logging.getLogger("video_auditor.worker")
@@ -74,6 +75,10 @@ def run() -> None:
     signal.signal(signal.SIGINT, _request_shutdown)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _request_shutdown)
+
+    removed = cleanup_abandoned_temp_dirs()
+    if removed:
+        logger.warning("Removed %s abandoned temporary video directories", removed)
 
     logger.info("Worker started; poll interval %.1f seconds", settings.worker_poll_seconds)
     last_recovery = 0.0
