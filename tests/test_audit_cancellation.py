@@ -6,20 +6,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import settings
 from app.core.database import Base, get_db
-from app.core.security import hash_password
 from app.main import app
 from app.models.audit import AuditRecord
-from app.models.user import UserAccount
+from app.models.user import UserAccount  # Register legacy foreign-key table for SQLite metadata.
 from app.services.cancellation import AuditCancelled, check_audit_cancellation
 
 
 @pytest.fixture()
 def cancellation_client(monkeypatch) -> Generator[tuple[TestClient, sessionmaker], None, None]:
-    monkeypatch.setattr(
-        "app.core.security.settings.auth_secret_key",
-        "test-secret-key-with-at-least-32-characters",
-    )
+    monkeypatch.setattr(settings, "workspace_access_key", "shared-team-secret")
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -44,28 +41,17 @@ def cancellation_client(monkeypatch) -> Generator[tuple[TestClient, sessionmaker
     engine.dispose()
 
 
-def _add_user(factory, email: str, role: str) -> str:
-    with factory() as db:
-        user = UserAccount(
-            email=email,
-            password_hash=hash_password("correct-horse-battery"),
-            role=role,
-            is_active=True,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user.id
+def _headers(key: str = "shared-team-secret") -> dict[str, str]:
+    return {"Authorization": f"Bearer {key}"}
 
 
-def _add_audit(factory, owner_id: str, status: str) -> str:
+def _add_audit(factory, status: str) -> str:
     with factory() as db:
         audit = AuditRecord(
             youtube_url="https://www.youtube.com/watch?v=abcdefghijk",
             video_id="abcdefghijk",
             content_type="unknown",
             status=status,
-            created_by_user_id=owner_id,
             attempt_count=1 if status in {"processing", "cancelling"} else 0,
             worker_id="test-worker" if status in {"processing", "cancelling"} else None,
             lease_token="test-lease" if status in {"processing", "cancelling"} else None,
@@ -76,23 +62,22 @@ def _add_audit(factory, owner_id: str, status: str) -> str:
         return audit.id
 
 
-def _token(client: TestClient, email: str) -> dict[str, str]:
-    response = client.post(
-        "/api/v1/auth/token",
-        json={"email": email, "password": "correct-horse-battery"},
-    )
-    assert response.status_code == 200, response.text
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+def test_shared_workspace_key_is_required_for_audit_endpoints(cancellation_client):
+    client, _factory = cancellation_client
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/api/v1/audits").status_code == 401
+    assert client.get("/api/v1/audits", headers=_headers("wrong-key")).status_code == 401
+    assert client.get("/api/v1/audits", headers=_headers()).status_code == 200
 
 
-def test_admin_can_cancel_pending_audit_immediately(cancellation_client):
+def test_team_member_can_cancel_pending_audit_immediately(cancellation_client):
     client, factory = cancellation_client
-    admin_id = _add_user(factory, "admin@example.com", "admin")
-    audit_id = _add_audit(factory, admin_id, "pending")
+    audit_id = _add_audit(factory, "pending")
 
     response = client.post(
         f"/api/v1/audits/{audit_id}/cancel",
-        headers=_token(client, "admin@example.com"),
+        headers=_headers(),
     )
 
     assert response.status_code == 200, response.text
@@ -104,15 +89,13 @@ def test_admin_can_cancel_pending_audit_immediately(cancellation_client):
         assert record.next_retry_at is None
 
 
-def test_operator_requests_cancellation_and_worker_finalizes_it(cancellation_client):
+def test_team_member_requests_cancellation_and_worker_finalizes_it(cancellation_client):
     client, factory = cancellation_client
-    operator_id = _add_user(factory, "operator@example.com", "operator")
-    audit_id = _add_audit(factory, operator_id, "processing")
-    headers = _token(client, "operator@example.com")
+    audit_id = _add_audit(factory, "processing")
 
     response = client.post(
         f"/api/v1/audits/{audit_id}/cancel",
-        headers=headers,
+        headers=_headers(),
     )
 
     assert response.status_code == 200, response.text
@@ -130,42 +113,23 @@ def test_operator_requests_cancellation_and_worker_finalizes_it(cancellation_cli
         assert record.processing_stage is None
 
 
-def test_operator_cannot_cancel_another_operators_audit(cancellation_client):
+def test_all_team_members_see_the_same_audit_history(cancellation_client):
     client, factory = cancellation_client
-    owner_id = _add_user(factory, "owner@example.com", "operator")
-    other_id = _add_user(factory, "other@example.com", "operator")
-    audit_id = _add_audit(factory, owner_id, "pending")
+    audit_id = _add_audit(factory, "completed")
 
-    response = client.post(
-        f"/api/v1/audits/{audit_id}/cancel",
-        headers=_token(client, "other@example.com"),
-    )
+    response = client.get("/api/v1/audits", headers=_headers())
+    detail = client.get(f"/api/v1/audits/{audit_id}", headers=_headers("shared-team-secret"))
 
-    assert response.status_code == 404
-    with factory() as db:
-        assert db.get(AuditRecord, audit_id).status == "pending"
-
-
-def test_reviewer_cannot_cancel_audit(cancellation_client):
-    client, factory = cancellation_client
-    owner_id = _add_user(factory, "owner@example.com", "operator")
-    _add_user(factory, "reviewer@example.com", "reviewer")
-    audit_id = _add_audit(factory, owner_id, "pending")
-
-    response = client.post(
-        f"/api/v1/audits/{audit_id}/cancel",
-        headers=_token(client, "reviewer@example.com"),
-    )
-
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [audit_id]
+    assert detail.status_code == 200
 
 
 def test_cancel_is_idempotent_and_completed_audit_cannot_be_cancelled(cancellation_client):
     client, factory = cancellation_client
-    admin_id = _add_user(factory, "admin@example.com", "admin")
-    pending_id = _add_audit(factory, admin_id, "pending")
-    completed_id = _add_audit(factory, admin_id, "completed")
-    headers = _token(client, "admin@example.com")
+    pending_id = _add_audit(factory, "pending")
+    completed_id = _add_audit(factory, "completed")
+    headers = _headers()
 
     first = client.post(f"/api/v1/audits/{pending_id}/cancel", headers=headers)
     second = client.post(f"/api/v1/audits/{pending_id}/cancel", headers=headers)
@@ -177,16 +141,13 @@ def test_cancel_is_idempotent_and_completed_audit_cannot_be_cancelled(cancellati
     assert completed.status_code == 409
 
 
-
 def test_processor_stops_without_retry_when_cancelled_during_download(
     cancellation_client, monkeypatch
 ):
-    from app.models.audit import AuditRecord
     from app.services import processor
 
     _client, factory = cancellation_client
-    operator_id = _add_user(factory, "operator@example.com", "operator")
-    audit_id = _add_audit(factory, operator_id, "processing")
+    audit_id = _add_audit(factory, "processing")
     monkeypatch.setattr(processor, "SessionLocal", factory)
 
     def request_cancel(_url, _audit_id, *, cancel_check):
