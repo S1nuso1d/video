@@ -24,7 +24,7 @@ The web interface is a lightweight workspace for the analysis engine. It does no
 
 ## Shared access
 
-WORKSPACE_ACCESS_KEY is an optional shared key, not an account system.
+WORKSPACE_ACCESS_KEY is an optional shared key (minimum 32 characters), not an account system.
 
 - For development on a private localhost machine, leave it empty.
 - For a shared server, generate one random key and configure it in the server's .env.
@@ -38,7 +38,7 @@ Generate a key:
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ~~~
 
-Use HTTPS, keep the key private, and put rate limiting and appropriate network restrictions in front of any externally accessible deployment. A shared key is deliberately simpler than per-user authentication; it is not tenant isolation and cannot provide individual accountability.
+For direct browser integration from an existing company portal, set CORS_ALLOWED_ORIGINS to a JSON array of exact origins, for example ["https://portal.example.com"]. Server-to-server API calls do not need browser CORS. Use HTTPS, keep the key private, and put rate limiting and appropriate network restrictions in front of any externally accessible deployment. A shared key is deliberately simpler than per-user authentication; it is not tenant isolation and cannot provide individual accountability.
 
 Audit links contain an audit ID, not an access credential. A teammate still needs the workspace key if the server requires one.
 
