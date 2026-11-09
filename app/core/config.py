@@ -15,14 +15,20 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
     # Google Gen AI SDK timeout is specified in milliseconds.
     gemini_timeout_ms: int = 180000
-    # Attempts includes the initial request made by the SDK.
     gemini_retry_attempts: int = 3
     gemini_retry_initial_delay: float = 1.0
     gemini_retry_max_delay: float = 8.0
+
+    # Video acquisition is isolated per audit and always cleaned up by the processor.
+    yt_dlp_binary: str = "yt-dlp"
+    video_temp_root: str = "storage/temp"
+    video_format: str = "bv*[height<=720]+ba/b[height<=720]/b"
+    video_max_filesize_bytes: int = 1_500_000_000
+    video_download_timeout_seconds: int = 900
+
     # Worker-level retries happen only after the SDK's bounded retries are exhausted.
     audit_max_attempts: int = 2
     audit_retry_delay_seconds: int = 30
-    # If Gemini returns HTTP 429, delay all queued jobs so they share one cooldown.
     gemini_rate_limit_cooldown_seconds: int = 120
     worker_poll_seconds: float = 2.0
     stale_job_minutes: int = 240
