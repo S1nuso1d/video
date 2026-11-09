@@ -145,7 +145,7 @@ async function loadQueue(){
    about.append(node("div","review-row-title","Видео "+(a.video_id||a.id)));
    about.append(node("div","review-row-meta",a.decision_summary||a.summary||"AI или критерии проекта запросили дополнительную проверку."));
    top.append(about,node("span","tag unknown",a.review_status==="assigned"?"Историческое назначение":"Ожидает"));
-   row.append(top,row);
+   row.append(top);
    const open=button("Открыть результат","secondary",()=>openAudit(a.id));row.append(open);queue.append(row)
   })
  }catch(error){queue.replaceChildren(node("div","empty",errorText(error)))}
@@ -307,8 +307,17 @@ $("refreshButton").addEventListener("click",async()=>{await loadHistory();await 
 $("refreshReviewButton").addEventListener("click",loadQueue);
 $("accessToggle").addEventListener("click",()=>{$("accessPanel").hidden=!$("accessPanel").hidden;$("workspaceKey").value=workspaceKey});
 $("saveKey").addEventListener("click",async()=>{
- workspaceKey=$("workspaceKey").value.trim();if(workspaceKey)sessionStorage.setItem("videoAuditorWorkspaceKey",workspaceKey);else sessionStorage.removeItem("videoAuditorWorkspaceKey");
- $("accessMessage").className="message";try{await loadHistory();await loadQueue();message($("accessMessage"),"Ключ сохранён для этой вкладки.","info");const id=new URLSearchParams(window.location.search).get("audit");if(id)await openAudit(id)}catch(error){message($("accessMessage"),errorText(error),"error")}
+ const candidate=$("workspaceKey").value.trim();
+ workspaceKey=candidate;
+ if(workspaceKey)sessionStorage.setItem("videoAuditorWorkspaceKey",workspaceKey);else sessionStorage.removeItem("videoAuditorWorkspaceKey");
+ $("accessMessage").className="message";
+ try{
+  await api("/api/v1/audits?limit=1");
+  $("accessPanel").hidden=true;
+  await loadHistory();await loadQueue();
+  message($("accessMessage"),"Ключ принят и сохранён для этой вкладки.","info");
+  const id=new URLSearchParams(window.location.search).get("audit");if(id)await openAudit(id)
+ }catch(error){message($("accessMessage"),errorText(error),"error")}
 });
 $("clearKey").addEventListener("click",()=>{workspaceKey="";sessionStorage.removeItem("videoAuditorWorkspaceKey");$("workspaceKey").value="";message($("accessMessage"),"Ключ удалён из текущей сессии.","info")});
 async function start(){
