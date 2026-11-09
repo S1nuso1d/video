@@ -211,7 +211,11 @@ def test_analyze_video_frames_samples_with_a_bounded_timeline(tmp_path, monkeypa
     assert result.metadata["evidence_frames"] > 0
     assert result.metadata["source_fps"] == 2.0
     assert result.metadata["analysis_resolution_width"] == 8
-    assert any(item["code"] == "black_frame_segment" for item in result.findings)
+    black_finding = next(
+        item for item in result.findings if item["code"] == "black_frame_segment"
+    )
+    assert black_finding["evidence"]["frames"][0]["mime_type"] == "image/jpeg"
+    assert black_finding["evidence"]["frames"][0]["data_base64"] == "ZmFrZS1qcGVn"
     assert fake_cv2.capture.release is not None
 
 
