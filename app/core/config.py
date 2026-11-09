@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     cv_freeze_changed_pixel_ratio: float = 0.002
     cv_freeze_pixel_delta: int = 3
     cv_freeze_min_duration_seconds: float = 2.5
+    cv_scene_change_threshold: float = 0.65
+    cv_blur_focus_threshold: float = 20.0
+    cv_blur_min_duration_seconds: float = 1.5
+    cv_evidence_max_frames: int = 8
+    cv_evidence_width: int = 240
+    cv_evidence_jpeg_quality: int = 45
+    cv_evidence_max_bytes_per_frame: int = 12000
 
     # Worker-level retries happen only after the SDK's bounded retries are exhausted.
     audit_max_attempts: int = 2
@@ -98,6 +105,20 @@ class Settings(BaseSettings):
             raise ValueError("CV_FREEZE_PIXEL_DELTA must be between 0 and 255")
         if self.cv_freeze_min_duration_seconds <= 0:
             raise ValueError("CV_FREEZE_MIN_DURATION_SECONDS must be greater than 0")
+        if not 0 < self.cv_scene_change_threshold <= 1:
+            raise ValueError("CV_SCENE_CHANGE_THRESHOLD must be in (0, 1]")
+        if self.cv_blur_focus_threshold < 0:
+            raise ValueError("CV_BLUR_FOCUS_THRESHOLD must be non-negative")
+        if self.cv_blur_min_duration_seconds <= 0:
+            raise ValueError("CV_BLUR_MIN_DURATION_SECONDS must be greater than 0")
+        if self.cv_evidence_max_frames < 0:
+            raise ValueError("CV_EVIDENCE_MAX_FRAMES must be non-negative")
+        if self.cv_evidence_width < 64:
+            raise ValueError("CV_EVIDENCE_WIDTH must be at least 64")
+        if not 1 <= self.cv_evidence_jpeg_quality <= 100:
+            raise ValueError("CV_EVIDENCE_JPEG_QUALITY must be between 1 and 100")
+        if self.cv_evidence_max_bytes_per_frame < 1024:
+            raise ValueError("CV_EVIDENCE_MAX_BYTES_PER_FRAME must be at least 1024")
         return self
 
     model_config = SettingsConfigDict(

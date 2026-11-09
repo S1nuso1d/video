@@ -66,6 +66,40 @@ def test_freeze_detector_does_not_duplicate_black_screen(monkeypatch):
     assert [item["code"] for item in findings] == ["black_frame_segment"]
 
 
+def test_blur_candidate_requires_a_sustained_low_focus_measure(monkeypatch):
+    monkeypatch.setattr(frame_analyzer.settings, "cv_blur_focus_threshold", 10.0)
+    monkeypatch.setattr(frame_analyzer.settings, "cv_blur_min_duration_seconds", 1.0)
+    samples = [
+        FrameSample(0.0, 100.0, 0.0, blur_score=5.0),
+        FrameSample(0.5, 100.0, 0.0, blur_score=6.0),
+        FrameSample(1.0, 100.0, 0.0, blur_score=4.0),
+        FrameSample(1.5, 100.0, 0.0, blur_score=80.0),
+    ]
+
+    findings = frame_analyzer._build_findings(samples, 0.5)
+
+    blur = next(item for item in findings if item["code"] == "blur_suspected")
+    assert blur["confidence"] == "low"
+    assert blur["evidence"]["estimated_duration_seconds"] == 1.5
+    assert blur["evidence"]["mean_focus_measure"] == 5.0
+
+
+def test_scene_change_candidate_uses_adjacent_sample_evidence(monkeypatch):
+    monkeypatch.setattr(frame_analyzer.settings, "cv_scene_change_threshold", 0.7)
+    samples = [
+        FrameSample(0.0, 80.0, 0.0, scene_change_score=None),
+        FrameSample(0.5, 90.0, 0.0, scene_change_score=0.82),
+        FrameSample(1.0, 90.0, 0.0, scene_change_score=0.2),
+    ]
+
+    findings = frame_analyzer._build_findings(samples, 0.5)
+
+    assert len(findings) == 1
+    assert findings[0]["code"] == "scene_change_suspected"
+    assert findings[0]["evidence"]["start_time_seconds"] == 0.0
+    assert findings[0]["evidence"]["end_time_seconds"] == 0.5
+
+
 @dataclass
 class _FakeCapture:
     frames: list
@@ -107,6 +141,8 @@ class _FakeCV2:
     CMP_LE = 5
     INTER_AREA = 6
     THRESH_BINARY = 7
+    CV_64F = 8
+    IMWRITE_JPEG_QUALITY = 9
     __version__ = "test"
 
     def __init__(self, frames):
@@ -137,6 +173,20 @@ class _FakeCV2:
         mask = (image > threshold).astype(np.uint8) * max_value
         return threshold, mask
 
+    def Laplacian(self, image, _depth):
+        return _FakeLaplacian(np.var(image))
+
+    def imencode(self, _extension, _image, _options):
+        return True, np.frombuffer(b"fake-jpeg", dtype=np.uint8)
+
+
+@dataclass
+class _FakeLaplacian:
+    variance: float
+
+    def var(self):
+        return float(self.variance)
+
 
 def test_analyze_video_frames_samples_with_a_bounded_timeline(tmp_path, monkeypatch):
     path = tmp_path / "synthetic.mp4"
@@ -151,13 +201,21 @@ def test_analyze_video_frames_samples_with_a_bounded_timeline(tmp_path, monkeypa
     monkeypatch.setattr(frame_analyzer.settings, "cv_resize_width", 320)
     monkeypatch.setattr(frame_analyzer.settings, "cv_black_min_duration_seconds", 0.5)
     monkeypatch.setattr(frame_analyzer.settings, "cv_freeze_min_duration_seconds", 2.5)
+    monkeypatch.setattr(frame_analyzer.settings, "cv_blur_min_duration_seconds", 2.0)
+    monkeypatch.setattr(frame_analyzer.settings, "cv_evidence_max_frames", 4)
+    monkeypatch.setattr(frame_analyzer.settings, "cv_evidence_width", 160)
 
     result = frame_analyzer.analyze_video_frames(path, duration_seconds=2.0)
 
     assert result.metadata["sampled_frames"] == 4
+    assert result.metadata["evidence_frames"] > 0
     assert result.metadata["source_fps"] == 2.0
     assert result.metadata["analysis_resolution_width"] == 8
-    assert any(item["code"] == "black_frame_segment" for item in result.findings)
+    black_finding = next(
+        item for item in result.findings if item["code"] == "black_frame_segment"
+    )
+    assert black_finding["evidence"]["frames"][0]["mime_type"] == "image/jpeg"
+    assert black_finding["evidence"]["frames"][0]["data_base64"] == "ZmFrZS1qcGVn"
     assert fake_cv2.capture.release is not None
 
 

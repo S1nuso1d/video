@@ -7,9 +7,12 @@ standalone accept/reject decision.
 
 from __future__ import annotations
 
+import base64
 import logging
 import math
 import time
+
+import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -45,6 +48,9 @@ class FrameSample:
     dark_pixel_ratio: float
     motion_mean_difference: float | None = None
     motion_changed_pixel_ratio: float | None = None
+    frame_index: int = -1
+    blur_score: float | None = None
+    scene_change_score: float | None = None
 
     @property
     def is_black_candidate(self) -> bool:
@@ -197,10 +203,205 @@ def _build_findings(
             }
         )
 
+    # Blur is treated as a low-confidence candidate only when several adjacent
+    # samples remain below the focus-measure threshold. Smooth graphics and
+    # shallow-depth-of-field shots can legitimately produce low scores.
+    blur_runs: list[list[FrameSample]] = []
+    current_blur_run: list[FrameSample] = []
+    for sample in samples:
+        is_blur_candidate = (
+            sample.blur_score is not None
+            and sample.blur_score <= settings.cv_blur_focus_threshold
+            and not sample.is_black_candidate
+        )
+        if not is_blur_candidate:
+            if current_blur_run:
+                blur_runs.append(current_blur_run)
+                current_blur_run = []
+            continue
+        if (
+            current_blur_run
+            and sample.timestamp_seconds - current_blur_run[-1].timestamp_seconds <= max_gap
+        ):
+            current_blur_run.append(sample)
+        else:
+            if current_blur_run:
+                blur_runs.append(current_blur_run)
+            current_blur_run = [sample]
+    if current_blur_run:
+        blur_runs.append(current_blur_run)
+
+    for run in blur_runs:
+        start = run[0].timestamp_seconds
+        end = run[-1].timestamp_seconds + interval
+        if duration_seconds is not None and duration_seconds > 0:
+            end = min(end, duration_seconds)
+        duration = max(0.0, end - start)
+        if duration < settings.cv_blur_min_duration_seconds:
+            continue
+        scores = [item.blur_score for item in run if item.blur_score is not None]
+        findings.append(
+            {
+                "code": "blur_suspected",
+                "severity": "warning",
+                "source": "opencv",
+                "confidence": "low",
+                "description": (
+                    "The sampled frames have a low Laplacian-variance focus measure. "
+                    "Smooth scenes, graphics, or intentional focus effects may produce "
+                    "the same signal; inspect the evidence frames."
+                ),
+                "evidence": {
+                    "start_time_seconds": round(start, 3),
+                    "end_time_seconds": round(end, 3),
+                    "estimated_duration_seconds": round(duration, 3),
+                    "sample_count": len(run),
+                    "mean_focus_measure": round(sum(scores) / len(scores), 3),
+                    "focus_measure_threshold": settings.cv_blur_focus_threshold,
+                },
+            }
+        )
+
+    # A large distribution/pixel change between adjacent samples is a possible
+    # scene transition. Sampling cannot guarantee that every cut is observed.
+    for previous, current in zip(samples, samples[1:]):
+        score = current.scene_change_score
+        if score is None or score < settings.cv_scene_change_threshold:
+            continue
+        findings.append(
+            {
+                "code": "scene_change_suspected",
+                "severity": "observation",
+                "source": "opencv",
+                "confidence": "low",
+                "description": (
+                    "A strong visual change was measured between adjacent sampled "
+                    "frames. This may be an edit, camera movement, or a rapid change "
+                    "inside the same scene."
+                ),
+                "evidence": {
+                    "start_time_seconds": round(previous.timestamp_seconds, 3),
+                    "end_time_seconds": round(current.timestamp_seconds, 3),
+                    "scene_change_score": round(score, 4),
+                },
+            }
+        )
+
     findings.sort(
         key=lambda finding: finding.get("evidence", {}).get("start_time_seconds", 0)
     )
     return findings
+
+
+def _select_evidence_samples(
+    findings: list[dict[str, Any]],
+    samples: list[FrameSample],
+    max_frames: int,
+) -> list[tuple[dict[str, Any], list[FrameSample]]]:
+    """Select representative sampled frames without retaining full frames in memory."""
+    selected: list[tuple[dict[str, Any], list[FrameSample]]] = []
+    used_indices: set[int] = set()
+    frame_budget = max(0, int(max_frames))
+
+    for finding in findings:
+        if frame_budget <= 0:
+            break
+        evidence = finding.get("evidence", {})
+        code = finding.get("code")
+        if code == "freeze_frame_suspected":
+            targets = [
+                evidence.get("start_time_seconds"),
+                evidence.get("end_time_seconds"),
+            ]
+        elif code == "scene_change_suspected":
+            targets = [evidence.get("end_time_seconds")]
+        else:
+            start = evidence.get("start_time_seconds")
+            end = evidence.get("end_time_seconds")
+            targets = [
+                (float(start) + float(end)) / 2
+                if isinstance(start, (int, float)) and isinstance(end, (int, float))
+                else start
+            ]
+
+        chosen: list[FrameSample] = []
+        for target in targets:
+            if not isinstance(target, (int, float)):
+                continue
+            candidates = [
+                sample for sample in samples
+                if sample.frame_index >= 0 and sample.frame_index not in used_indices
+            ]
+            if not candidates:
+                break
+            closest = min(
+                candidates,
+                key=lambda sample: abs(sample.timestamp_seconds - float(target)),
+            )
+            used_indices.add(closest.frame_index)
+            chosen.append(closest)
+            frame_budget -= 1
+            if frame_budget <= 0:
+                break
+        if chosen:
+            selected.append((finding, chosen))
+    return selected
+
+
+def _attach_evidence_frames(
+    findings: list[dict[str, Any]],
+    samples: list[FrameSample],
+    capture: Any,
+) -> int:
+    """Re-read only selected frames and persist tiny JPEG previews as base64."""
+    selected = _select_evidence_samples(
+        findings,
+        samples,
+        settings.cv_evidence_max_frames,
+    )
+    attached = 0
+    for finding, chosen_samples in selected:
+        encoded_frames: list[dict[str, Any]] = []
+        for sample in chosen_samples:
+            if not capture.set(cv2.CAP_PROP_POS_FRAMES, float(sample.frame_index)):
+                continue
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                continue
+            height, width = frame.shape[:2]
+            target_width = max(64, int(settings.cv_evidence_width))
+            if width > target_width:
+                target_height = max(1, int(round(height * target_width / width)))
+                frame = cv2.resize(
+                    frame,
+                    (target_width, target_height),
+                    interpolation=cv2.INTER_AREA,
+                )
+            success, encoded = cv2.imencode(
+                ".jpg",
+                frame,
+                [cv2.IMWRITE_JPEG_QUALITY, int(settings.cv_evidence_jpeg_quality)],
+            )
+            if not success:
+                continue
+            image_bytes = encoded.tobytes()
+            if len(image_bytes) > settings.cv_evidence_max_bytes_per_frame:
+                logger.debug(
+                    "Skipping oversized OpenCV evidence frame at %.3fs",
+                    sample.timestamp_seconds,
+                )
+                continue
+            encoded_frames.append(
+                {
+                    "timestamp_seconds": round(sample.timestamp_seconds, 3),
+                    "mime_type": "image/jpeg",
+                    "data_base64": base64.b64encode(image_bytes).decode("ascii"),
+                }
+            )
+            attached += 1
+        if encoded_frames:
+            finding.setdefault("evidence", {})["frames"] = encoded_frames
+    return attached
 
 
 def analyze_video_frames(
@@ -318,6 +519,7 @@ def analyze_video_frames(
 
             motion_mean_difference = None
             motion_changed_pixel_ratio = None
+            scene_change_score = None
             if previous_gray is not None and previous_gray.shape == gray.shape:
                 difference = cv2.absdiff(previous_gray, gray)
                 motion_mean_difference = float(cv2.mean(difference)[0])
@@ -330,6 +532,21 @@ def analyze_video_frames(
                 motion_changed_pixel_ratio = float(
                     cv2.countNonZero(changed_mask) / pixel_count
                 )
+                previous_hist = np.histogram(
+                    previous_gray, bins=32, range=(0, 256)
+                )[0].astype(np.float64)
+                current_hist = np.histogram(
+                    gray, bins=32, range=(0, 256)
+                )[0].astype(np.float64)
+                previous_hist /= max(1.0, float(previous_hist.sum()))
+                current_hist /= max(1.0, float(current_hist.sum()))
+                bhattacharyya = math.sqrt(
+                    max(0.0, 1.0 - float(np.sqrt(previous_hist * current_hist).sum()))
+                )
+                pixel_change = min(1.0, motion_mean_difference / 96.0) * 0.70
+                scene_change_score = max(bhattacharyya, pixel_change)
+
+            blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
             timestamp = (
                 frame_index / fps
@@ -347,6 +564,9 @@ def analyze_video_frames(
                     dark_pixel_ratio=dark_ratio,
                     motion_mean_difference=motion_mean_difference,
                     motion_changed_pixel_ratio=motion_changed_pixel_ratio,
+                    frame_index=frame_index,
+                    blur_score=blur_score,
+                    scene_change_score=scene_change_score,
                 )
             )
             previous_gray = gray
@@ -383,10 +603,11 @@ def analyze_video_frames(
             "sampling_was_capped": len(frame_indices) >= max_samples,
             "analysis_resolution_width": min(resize_width, original_width or resize_width),
         }
-        return FrameAnalysisResult(
-            metadata=metadata,
-            findings=_build_findings(samples, actual_interval, duration),
-        )
+        findings = _build_findings(samples, actual_interval, duration)
+        evidence_frame_count = _attach_evidence_frames(findings, samples, capture)
+        metadata["evidence_frames"] = evidence_frame_count
+        metadata["evidence_width"] = max(64, int(settings.cv_evidence_width))
+        return FrameAnalysisResult(metadata=metadata, findings=findings)
     except VideoFrameAnalysisError:
         raise
     except Exception as exc:
