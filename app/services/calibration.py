@@ -344,7 +344,7 @@ def calibration_report_markdown(report: Mapping[str, Any]) -> str:
         "",
         "## Verdict confusion matrix",
         "",
-        "| Expert \\ Predicted | Accepted | Rejected | Manual review |",
+        "| Expert / Predicted | Accepted | Rejected | Manual review |",
         "|---|---:|---:|---:|",
     ]
     short_names = {
