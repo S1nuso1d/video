@@ -76,6 +76,21 @@ def test_processor_persists_technical_evidence_before_gemini(
             "evidence": {},
         }
     ]
+    visual_metadata = {
+        "analyzer": "opencv",
+        "sampled_frames": 4,
+        "sample_interval_seconds": 0.5,
+    }
+    visual_findings = [
+        {
+            "code": "black_frame_segment",
+            "severity": "warning",
+            "source": "opencv",
+            "confidence": "medium",
+            "description": "Test visual observation",
+            "evidence": {"start_time_seconds": 0.0},
+        }
+    ]
 
     monkeypatch.setattr(
         processor,
