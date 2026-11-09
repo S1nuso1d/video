@@ -5,20 +5,18 @@ from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import require_roles
+from app.core.security import require_workspace_access
 from app.models.audit import AuditRecord
 from app.models.review import HumanReviewEvent
-from app.models.user import UserAccount
 from app.schemas.audit import AuditResponse
 from app.schemas.reviews import (
     HumanReviewDecisionRequest,
     HumanReviewEventResponse,
-    ReviewAssignmentRequest,
     ReviewReopenRequest,
     ReviewStatus,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_workspace_access)])
 
 
 def _get_audit_for_update(db: Session, audit_id: str) -> AuditRecord:
@@ -36,23 +34,23 @@ def _ensure_reviewable(record: AuditRecord) -> None:
     if record.status != "completed" or record.review_status not in {"pending", "assigned"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Audit is not waiting for a human review decision",
+            detail="Анализ не ожидает командного решения",
         )
 
 
 def _event(
     *,
     audit_id: str,
-    actor_user_id: str | None,
     action: str,
     from_status: str | None,
     to_status: str | None,
     decision: str | None = None,
     comment: str | None = None,
 ) -> HumanReviewEvent:
+    # actor_user_id remains nullable for compatibility with historical records.
     return HumanReviewEvent(
         audit_id=audit_id,
-        actor_user_id=actor_user_id,
+        actor_user_id=None,
         action=action,
         from_status=from_status,
         to_status=to_status,
@@ -65,11 +63,9 @@ def _event(
 @router.get("/queue", response_model=list[AuditResponse])
 def list_review_queue(
     review_status: ReviewStatus | None = Query(default=None),
-    assigned_to_me: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    user: UserAccount = Depends(require_roles("admin", "reviewer")),
 ) -> list[AuditRecord]:
     statement = select(AuditRecord).where(
         AuditRecord.review_status != "not_required"
@@ -80,8 +76,6 @@ def list_review_queue(
         )
     else:
         statement = statement.where(AuditRecord.review_status == review_status.value)
-    if assigned_to_me:
-        statement = statement.where(AuditRecord.reviewer_user_id == user.id)
     statement = statement.order_by(
         case(
             (AuditRecord.review_status == "pending", 0),
@@ -97,7 +91,6 @@ def list_review_queue(
 def get_review_history(
     audit_id: str,
     db: Session = Depends(get_db),
-    _user: UserAccount = Depends(require_roles("admin", "reviewer")),
 ) -> list[HumanReviewEvent]:
     exists = db.scalar(select(AuditRecord.id).where(AuditRecord.id == audit_id))
     if exists is None:
@@ -110,111 +103,27 @@ def get_review_history(
     return list(db.scalars(statement).all())
 
 
-@router.put("/{audit_id}/assignment", response_model=AuditResponse)
-def assign_reviewer(
-    audit_id: str,
-    payload: ReviewAssignmentRequest,
-    db: Session = Depends(get_db),
-    admin: UserAccount = Depends(require_roles("admin")),
-) -> AuditRecord:
-    # Authentication has already queried the user on this Session, so its
-    # transaction is active. Keep the row lock, write the event, and commit once.
-    record = _get_audit_for_update(db, audit_id)
-    _ensure_reviewable(record)
-
-    reviewer: UserAccount | None = None
-    if payload.reviewer_user_id is not None:
-        reviewer = db.get(UserAccount, payload.reviewer_user_id)
-        if reviewer is None or not reviewer.is_active or reviewer.role != "reviewer":
-            raise HTTPException(
-                status_code=422,
-                detail="Указанный пользователь не является активным reviewer",
-            )
-
-    previous_user_id = record.reviewer_user_id
-    previous_status = record.review_status
-    next_user_id = reviewer.id if reviewer is not None else None
-    next_status = "assigned" if reviewer is not None else "pending"
-    if previous_user_id == next_user_id and previous_status == next_status:
-        return record
-
-    record.reviewer_user_id = next_user_id
-    record.review_status = next_status
-    db.add(
-        _event(
-            audit_id=record.id,
-            actor_user_id=admin.id,
-            action="assigned" if reviewer is not None else "unassigned",
-            from_status=previous_status,
-            to_status=next_status,
-            comment=payload.comment,
-        )
-    )
-    db.commit()
-    db.refresh(record)
-    return record
-
-
-@router.post("/{audit_id}/claim", response_model=AuditResponse)
-def claim_review(
-    audit_id: str,
-    db: Session = Depends(get_db),
-    reviewer: UserAccount = Depends(require_roles("reviewer")),
-) -> AuditRecord:
-    record = _get_audit_for_update(db, audit_id)
-    _ensure_reviewable(record)
-    if record.review_status != "pending" or record.reviewer_user_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Audit is already assigned or is not available to claim",
-        )
-    record.reviewer_user_id = reviewer.id
-    record.review_status = "assigned"
-    db.add(
-        _event(
-            audit_id=record.id,
-            actor_user_id=reviewer.id,
-            action="claimed",
-            from_status="pending",
-            to_status="assigned",
-        )
-    )
-    db.commit()
-    db.refresh(record)
-    return record
-
-
 @router.post("/{audit_id}/decision", response_model=AuditResponse)
 def submit_review_decision(
     audit_id: str,
     payload: HumanReviewDecisionRequest,
     db: Session = Depends(get_db),
-    user: UserAccount = Depends(require_roles("admin", "reviewer")),
 ) -> AuditRecord:
+    """Record a shared team's decision without tying it to an individual account."""
     record = _get_audit_for_update(db, audit_id)
     _ensure_reviewable(record)
-    if user.role == "reviewer" and record.reviewer_user_id != user.id:
-        if record.reviewer_user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Сначала возьмите аудит в работу",
-            )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Аудит назначен другому reviewer",
-        )
 
     previous_status = record.review_status
     now = datetime.now(timezone.utc)
     record.human_review_decision = payload.decision.value
     record.human_review_comment = payload.comment
-    record.human_reviewed_by_user_id = user.id
+    record.human_reviewed_by_user_id = None
     record.human_reviewed_at = now
+    record.reviewer_user_id = None
     record.review_status = "completed"
     db.add(
         _event(
             audit_id=record.id,
-            actor_user_id=user.id,
             action="decision_submitted",
             from_status=previous_status,
             to_status="completed",
@@ -232,13 +141,13 @@ def reopen_review(
     audit_id: str,
     payload: ReviewReopenRequest,
     db: Session = Depends(get_db),
-    admin: UserAccount = Depends(require_roles("admin")),
 ) -> AuditRecord:
+    """Reopen a team decision while preserving its previous event in history."""
     record = _get_audit_for_update(db, audit_id)
     if record.status != "completed" or record.review_status != "completed":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Only a completed human review can be reopened",
+            detail="Повторно открыть можно только завершённую ручную проверку",
         )
     previous_decision = record.human_review_decision
     record.review_status = "pending"
@@ -250,7 +159,6 @@ def reopen_review(
     db.add(
         _event(
             audit_id=record.id,
-            actor_user_id=admin.id,
             action="reopened",
             from_status="completed",
             to_status="pending",
