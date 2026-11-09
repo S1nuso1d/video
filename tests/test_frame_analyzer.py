@@ -66,6 +66,40 @@ def test_freeze_detector_does_not_duplicate_black_screen(monkeypatch):
     assert [item["code"] for item in findings] == ["black_frame_segment"]
 
 
+def test_blur_candidate_requires_a_sustained_low_focus_measure(monkeypatch):
+    monkeypatch.setattr(frame_analyzer.settings, "cv_blur_focus_threshold", 10.0)
+    monkeypatch.setattr(frame_analyzer.settings, "cv_blur_min_duration_seconds", 1.0)
+    samples = [
+        FrameSample(0.0, 100.0, 0.0, blur_score=5.0),
+        FrameSample(0.5, 100.0, 0.0, blur_score=6.0),
+        FrameSample(1.0, 100.0, 0.0, blur_score=4.0),
+        FrameSample(1.5, 100.0, 0.0, blur_score=80.0),
+    ]
+
+    findings = frame_analyzer._build_findings(samples, 0.5)
+
+    blur = next(item for item in findings if item["code"] == "blur_suspected")
+    assert blur["confidence"] == "low"
+    assert blur["evidence"]["estimated_duration_seconds"] == 1.5
+    assert blur["evidence"]["mean_focus_measure"] == 5.0
+
+
+def test_scene_change_candidate_uses_adjacent_sample_evidence(monkeypatch):
+    monkeypatch.setattr(frame_analyzer.settings, "cv_scene_change_threshold", 0.7)
+    samples = [
+        FrameSample(0.0, 80.0, 0.0, scene_change_score=None),
+        FrameSample(0.5, 90.0, 0.0, scene_change_score=0.82),
+        FrameSample(1.0, 90.0, 0.0, scene_change_score=0.2),
+    ]
+
+    findings = frame_analyzer._build_findings(samples, 0.5)
+
+    assert len(findings) == 1
+    assert findings[0]["code"] == "scene_change_suspected"
+    assert findings[0]["evidence"]["start_time_seconds"] == 0.0
+    assert findings[0]["evidence"]["end_time_seconds"] == 0.5
+
+
 @dataclass
 class _FakeCapture:
     frames: list
