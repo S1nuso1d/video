@@ -13,6 +13,7 @@ Video Auditor is a preliminary video quality assessment application built with *
 - `yt-dlp`-based source acquisition with per-audit temporary directories, download timeout, and maximum file-size setting.
 - Temporary local video cleanup after processing, plus cleanup of abandoned temporary directories on worker startup.
 - **FFprobe technical metadata extraction** before the AI request: duration, file size, container, codec, resolution, pixel format, frame rates, bitrate, frame count, and audio stream metadata.
+- **OpenCV frame sampling** across the video timeline with a configurable sample cap and resized frames. It records timestamped near-black segments and sustained freeze-like regions as advisory evidence; these signals never change the final verdict by themselves.
 - Technical observations are stored separately from AI-detected defects. A missing audio stream is a warning; a measured duration below five seconds is recorded as an SFT finding. These observations are evidence, not an automatic final verdict.
 - If FFprobe is missing locally, processing can continue with a visible `ffprobe_unavailable` finding unless `FFPROBE_REQUIRED=true`.
 - Gemini file upload and processing-state polling before analysis.
@@ -42,6 +43,10 @@ FastAPI -> PostgreSQL (pending)
           + deterministic observations
                  |
                  v
+          OpenCV bounded frame sampling
+          + black/freeze-like signals
+                 |
+                 v
           Gemini file upload
           and processing wait
                  |
@@ -56,7 +61,7 @@ FastAPI -> PostgreSQL (pending)
           Delete local temporary files
 ```
 
-Technical metadata and findings are available from the audit API response as `technical_metadata` and `technical_findings`. The local video is not intended to be retained as an application asset. The processor deletes the per-audit working directory in a `finally` block. A worker startup cleanup removes old abandoned directories left by an unclean shutdown.
+Technical metadata and findings are available from the audit API response as `technical_metadata` and `technical_findings`. OpenCV sampling statistics and timestamped visual observations are exposed as `visual_metadata` and `visual_findings`. The local video is not intended to be retained as an application asset. The processor deletes the per-audit working directory in a `finally` block. A worker startup cleanup removes old abandoned directories left by an unclean shutdown.
 
 ## Worker reliability model
 
@@ -80,6 +85,7 @@ If the attempt budget remains, the job is returned to `pending` with a retry del
 - A Gemini API key.
 - `yt-dlp` available in PATH (installed by `requirements.txt` as a Python package; the executable should be available in the active virtual environment).
 - **FFmpeg / FFprobe** installed and available in PATH for local technical analysis. The Docker image installs FFmpeg automatically.
+- OpenCV is installed from `requirements.txt` as the headless package; no separate GUI toolkit is required.
 
 ## Local setup (Windows PowerShell)
 
@@ -179,6 +185,17 @@ All settings are loaded from `.env`.
 | `FFPROBE_BINARY` | `ffprobe` | FFprobe executable |
 | `FFPROBE_TIMEOUT_SECONDS` | `30` | Metadata extraction timeout |
 | `FFPROBE_REQUIRED` | `false` | Fail the audit if FFprobe is unavailable |
+| `CV_ANALYSIS_REQUIRED` | `false` | Fail the audit if OpenCV frame analysis cannot run |
+| `CV_SAMPLE_INTERVAL_SECONDS` | `0.5` | Target interval between sampled frames |
+| `CV_MAX_SAMPLES` | `1200` | Maximum number of frames sampled per video |
+| `CV_RESIZE_WIDTH` | `320` | Maximum width used for analysis frames |
+| `CV_BLACK_LUMA_THRESHOLD` | `16` | Grayscale threshold for dark pixels (0–255) |
+| `CV_BLACK_PIXEL_RATIO` | `0.985` | Minimum dark-pixel ratio for a black-frame candidate |
+| `CV_BLACK_MIN_DURATION_SECONDS` | `0.75` | Minimum estimated black interval duration |
+| `CV_FREEZE_MEAN_DIFF_THRESHOLD` | `0.8` | Maximum mean pixel difference for freeze-like samples |
+| `CV_FREEZE_CHANGED_PIXEL_RATIO` | `0.002` | Maximum changed-pixel ratio for freeze-like samples |
+| `CV_FREEZE_PIXEL_DELTA` | `3` | Per-pixel difference required to count as changed |
+| `CV_FREEZE_MIN_DURATION_SECONDS` | `2.5` | Minimum sampled freeze-like interval duration |
 | `AUDIT_MAX_ATTEMPTS` | `2` | Maximum worker claims per audit |
 | `AUDIT_RETRY_DELAY_SECONDS` | `30` | Base worker retry delay |
 | `GEMINI_RATE_LIMIT_COOLDOWN_SECONDS` | `120` | Queue cooldown after HTTP 429 |
@@ -197,13 +214,13 @@ Run the automated tests from the active virtual environment:
 python -m pytest
 ```
 
-The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. FFprobe tests mock the executable and cover metadata parsing, rational frame rates, missing audio, short-duration findings, malformed responses, and timeouts. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video.
+The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. FFprobe tests mock the executable and cover metadata parsing, rational frame rates, missing audio, short-duration findings, malformed responses, and timeouts. OpenCV tests use synthetic frame metrics and a fake capture source to verify black/freeze grouping, time evidence, sampling limits, and optional-dependency behavior. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video.
 
 ## Important limitations and responsible use
 
 1. Gemini video analysis does not guarantee that every frame or every audio sample is inspected.
 2. Timestamps, affected duration estimates, and defect confidence can be inaccurate.
-3. A technical signal such as blur, low brightness, or repeated frames is not automatically a defect; thresholds must be calibrated against the SFT specification and reviewed examples.
+3. A technical signal such as blur, low brightness, or repeated frames is not automatically a defect; thresholds must be calibrated against the SFT specification and reviewed examples. The initial OpenCV black/freeze detectors are conservative sampling-based indicators, can miss short events between samples, and can flag intentionally static or dark scenes.
 4. Video downloading must comply with the source platform's terms, copyright, and the content owner's permissions. Only process material that the operator is authorized to download and analyze.
 5. Local temporary files are deleted after the processor finishes. As with any process, forced power loss or filesystem errors can leave temporary artifacts; startup cleanup is a recovery measure, not a guarantee against every storage failure.
 6. Do not expose the development API publicly without authentication, authorization, rate limiting, HTTPS, and appropriate data-retention controls.
