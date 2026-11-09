@@ -1,6 +1,6 @@
 # Video Auditor — SFT Stage 1
 
-Video Auditor is a preliminary video quality assessment application built with **Python, FastAPI, PostgreSQL, SQLAlchemy, and Google Gemini**. It accepts a public YouTube URL, creates an audit job, downloads the source video into an isolated temporary directory, runs the configured AI assessment, validates the structured report, and stores the result.
+Video Auditor is a preliminary video quality assessment application built with **Python, FastAPI, PostgreSQL, SQLAlchemy, FFmpeg/FFprobe, and Google Gemini**. It accepts a public YouTube URL, creates an audit job, downloads the source video into an isolated temporary directory, runs the configured AI assessment, validates the structured report, and stores the result.
 
 > **Important:** the result is a preliminary assessment, not a certified technical measurement. AI can miss short defects, produce inaccurate timestamps, or misinterpret visual and audio content. Human review remains necessary for decisions that affect dataset acceptance.
 
@@ -12,6 +12,9 @@ Video Auditor is a preliminary video quality assessment application built with *
 - Separate worker process; long-running downloads and AI requests do not run inside the HTTP request.
 - `yt-dlp`-based source acquisition with per-audit temporary directories, download timeout, and maximum file-size setting.
 - Temporary local video cleanup after processing, plus cleanup of abandoned temporary directories on worker startup.
+- **FFprobe technical metadata extraction** before the AI request: duration, file size, container, codec, resolution, pixel format, frame rates, bitrate, frame count, and audio stream metadata.
+- Technical observations are stored separately from AI-detected defects. A missing audio stream is a warning; a measured duration below five seconds is recorded as an SFT finding. These observations are evidence, not an automatic final verdict.
+- If FFprobe is missing locally, processing can continue with a visible `ffprobe_unavailable` finding unless `FFPROBE_REQUIRED=true`.
 - Gemini file upload and processing-state polling before analysis.
 - Pydantic validation for structured JSON reports.
 - Conservative verdict policy that routes insufficiently supported results to manual review.
@@ -35,6 +38,10 @@ FastAPI -> PostgreSQL (pending)
           (isolated temp directory)
                  |
                  v
+          FFprobe technical metadata
+          + deterministic observations
+                 |
+                 v
           Gemini file upload
           and processing wait
                  |
@@ -49,7 +56,7 @@ FastAPI -> PostgreSQL (pending)
           Delete local temporary files
 ```
 
-The local video is not intended to be retained as an application asset. The processor deletes the per-audit working directory in a `finally` block. A worker startup cleanup removes old abandoned directories left by an unclean shutdown.
+Technical metadata and findings are available from the audit API response as `technical_metadata` and `technical_findings`. The local video is not intended to be retained as an application asset. The processor deletes the per-audit working directory in a `finally` block. A worker startup cleanup removes old abandoned directories left by an unclean shutdown.
 
 ## Worker reliability model
 
@@ -72,7 +79,7 @@ If the attempt budget remains, the job is returned to `pending` with a retry del
 - Docker Desktop with Docker Compose, or a reachable PostgreSQL instance.
 - A Gemini API key.
 - `yt-dlp` available in PATH (installed by `requirements.txt` as a Python package; the executable should be available in the active virtual environment).
-- FFmpeg is recommended for robust merging of separate video and audio streams selected by yt-dlp.
+- **FFmpeg / FFprobe** installed and available in PATH for local technical analysis. The Docker image installs FFmpeg automatically.
 
 ## Local setup (Windows PowerShell)
 
@@ -91,14 +98,16 @@ notepad .env
 
 Set `GEMINI_API_KEY`. Never commit `.env` or share the API key.
 
-3. Start PostgreSQL:
+3. Install FFmpeg on Windows and make sure `ffprobe.exe` is available in PATH. Verify with `ffmpeg -version` and `ffprobe -version`. If FFprobe is unavailable, processing can continue without metadata while `FFPROBE_REQUIRED=false`.
+
+4. Start PostgreSQL:
 
 ```powershell
 docker compose up -d postgres
 docker compose ps
 ```
 
-4. Create/activate the virtual environment and install dependencies:
+5. Create/activate the virtual environment and install dependencies:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -107,19 +116,19 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-5. Stop any previously running worker processes, then apply database migrations:
+6. Stop any previously running worker processes, then apply database migrations:
 
 ```powershell
 alembic upgrade head
 ```
 
-6. Start the API in the first PowerShell window:
+7. Start the API in the first PowerShell window:
 
 ```powershell
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-7. Start exactly one worker in a second PowerShell window:
+8. Start exactly one worker in a second PowerShell window:
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.worker
@@ -167,6 +176,9 @@ All settings are loaded from `.env`.
 | `VIDEO_TEMP_ROOT` | `storage/temp` | Temporary video root |
 | `VIDEO_MAX_FILESIZE_BYTES` | `1500000000` | Maximum download size |
 | `VIDEO_DOWNLOAD_TIMEOUT_SECONDS` | `900` | Download timeout |
+| `FFPROBE_BINARY` | `ffprobe` | FFprobe executable |
+| `FFPROBE_TIMEOUT_SECONDS` | `30` | Metadata extraction timeout |
+| `FFPROBE_REQUIRED` | `false` | Fail the audit if FFprobe is unavailable |
 | `AUDIT_MAX_ATTEMPTS` | `2` | Maximum worker claims per audit |
 | `AUDIT_RETRY_DELAY_SECONDS` | `30` | Base worker retry delay |
 | `GEMINI_RATE_LIMIT_COOLDOWN_SECONDS` | `120` | Queue cooldown after HTTP 429 |
@@ -185,7 +197,7 @@ Run the automated tests from the active virtual environment:
 python -m pytest
 ```
 
-The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video.
+The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. FFprobe tests mock the executable and cover metadata parsing, rational frame rates, missing audio, short-duration findings, malformed responses, and timeouts. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video.
 
 ## Important limitations and responsible use
 
@@ -199,6 +211,7 @@ The unit tests use SQLite for worker lease lifecycle checks and mocks for extern
 
 ## Useful documentation
 
+- [FFmpeg / FFprobe documentation](https://ffmpeg.org/ffprobe.html)
 - [Gemini API: Video understanding](https://ai.google.dev/gemini-api/docs/video-understanding)
 - [Gemini API: Structured outputs](https://ai.google.dev/gemini-api/docs/structured-output)
 - [FastAPI](https://fastapi.tiangolo.com/)
