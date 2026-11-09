@@ -385,7 +385,7 @@ def analyze_video_frames(
         }
         return FrameAnalysisResult(
             metadata=metadata,
-            findings=_build_findings(samples, actual_interval),
+            findings=_build_findings(samples, actual_interval, duration),
         )
     except VideoFrameAnalysisError:
         raise
