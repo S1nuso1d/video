@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     cv_analysis_required: bool = False
     cv_sample_interval_seconds: float = 0.5
     cv_max_samples: int = 1200
+    cv_analysis_timeout_seconds: int = 120
     cv_resize_width: int = 320
     cv_black_luma_threshold: int = 16
     cv_black_pixel_ratio: float = 0.985
