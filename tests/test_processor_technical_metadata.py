@@ -61,9 +61,9 @@ def test_processor_persists_technical_evidence_before_gemini(
         "probe": "ffprobe",
         "duration_seconds": 12.5,
         "file_size_bytes": 10,
-        "has_audio": True,
+        "has_audio": False,
         "video": {"width": 1920, "height": 1080, "frame_rate": 30.0},
-        "audio_streams": [{"codec": "aac"}],
+        "audio_streams": [],
     }
     findings = [
         {
