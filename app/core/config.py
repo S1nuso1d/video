@@ -15,11 +15,8 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     # Google YouTube URL input is a preview feature; set false to upload local files.
     gemini_youtube_direct: bool = True
-    # Authentication is disabled until a strong secret is configured.
-    # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
-    auth_secret_key: str = ""
-    auth_access_token_minutes: int = 30
-    auth_token_issuer: str = "video-auditor"
+    # Optional shared team key. Keep empty for private local development.
+    workspace_access_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
     # Google Gen AI SDK timeout is specified in milliseconds.
     gemini_timeout_ms: int = 180000
@@ -89,10 +86,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_worker_lease_settings(self):
-        if self.auth_access_token_minutes < 1:
-            raise ValueError("AUTH_ACCESS_TOKEN_MINUTES must be at least 1")
-        if self.auth_secret_key and len(self.auth_secret_key) < 32:
-            raise ValueError("AUTH_SECRET_KEY must contain at least 32 characters")
         if self.worker_heartbeat_seconds < 1:
             raise ValueError("WORKER_HEARTBEAT_SECONDS must be at least 1")
         if self.worker_lease_timeout_seconds < self.worker_heartbeat_seconds * 3:
