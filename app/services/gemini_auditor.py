@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from typing import Any
 
 from google import genai
@@ -42,7 +43,6 @@ def _status_code(exc: Exception) -> int | None:
 
 
 def is_retryable_gemini_error(exc: Exception) -> bool:
-    """Recognize transient SDK/network failures without depending on private SDK classes."""
     code = _status_code(exc)
     if code in RETRYABLE_HTTP_STATUS_CODES:
         return True
@@ -64,7 +64,6 @@ def is_retryable_gemini_error(exc: Exception) -> bool:
 
 
 def describe_gemini_error(exc: Exception) -> str:
-    """Return a safe Russian message without exposing SDK request details or credentials."""
     code = _status_code(exc)
     name = type(exc).__name__.lower()
 
@@ -84,33 +83,53 @@ def describe_gemini_error(exc: Exception) -> str:
     return "Не удалось получить или проверить отчёт Gemini API. Проверь журнал Worker."
 
 
-def analyze_youtube_video(youtube_url: str, content_type: str) -> AuditReport:
-    """Inspect a public YouTube URL and return a validated SFT report."""
+def _make_client() -> genai.Client:
+    return genai.Client(
+        api_key=settings.gemini_api_key,
+        http_options=types.HttpOptions(
+            timeout=settings.gemini_timeout_ms,
+            retry_options=types.HttpRetryOptions(
+                attempts=max(1, settings.gemini_retry_attempts),
+                initial_delay=settings.gemini_retry_initial_delay,
+                max_delay=settings.gemini_retry_max_delay,
+                exp_base=2.0,
+                jitter=1.0,
+                http_status_codes=list(RETRYABLE_HTTP_STATUS_CODES),
+            ),
+        ),
+    )
+
+
+def analyze_youtube_video(
+    youtube_url: str,
+    content_type: str,
+    *,
+    local_video_path: Path | None = None,
+) -> AuditReport:
+    """Inspect a video and return a validated SFT report.
+
+    When a local download is available it is uploaded to Gemini for the audit.
+    The temporary Gemini file is deleted immediately after the response is read.
+    """
     if not settings.gemini_api_key.strip():
         raise GeminiConfigurationError(
             "GEMINI_API_KEY не задан. Добавь ключ в .env и перезапусти worker."
         )
 
+    client = _make_client()
+    uploaded_file = None
     try:
-        client = genai.Client(
-            api_key=settings.gemini_api_key,
-            http_options=types.HttpOptions(
-                timeout=settings.gemini_timeout_ms,
-                retry_options=types.HttpRetryOptions(
-                    attempts=max(1, settings.gemini_retry_attempts),
-                    initial_delay=settings.gemini_retry_initial_delay,
-                    max_delay=settings.gemini_retry_max_delay,
-                    exp_base=2.0,
-                    jitter=1.0,
-                    http_status_codes=list(RETRYABLE_HTTP_STATUS_CODES),
-                ),
-            ),
-        )
+        if local_video_path is not None:
+            uploaded_file = client.files.upload(file=local_video_path)
+            video_input = {"type": "video", "uri": uploaded_file.uri}
+        else:
+            video_input = {"type": "video", "uri": youtube_url}
+
         interaction = client.interactions.create(
             model=settings.gemini_model,
             input=[
                 {"type": "text", "text": build_audit_prompt(content_type)},
-                {"type": "video", "uri": youtube_url},
+                video_input,
             ],
             response_format={
                 "type": "text",
@@ -125,7 +144,7 @@ def analyze_youtube_video(youtube_url: str, content_type: str) -> AuditReport:
         return enforce_conservative_policy(report)
     except (GeminiConfigurationError, GeminiAuditError):
         raise
-    except Exception as exc:  # SDK/provider exception types vary between releases.
+    except Exception as exc:
         retryable = is_retryable_gemini_error(exc)
         status_code = _status_code(exc)
         if retryable:
@@ -141,3 +160,9 @@ def analyze_youtube_video(youtube_url: str, content_type: str) -> AuditReport:
             retryable=retryable,
             status_code=status_code,
         ) from exc
+    finally:
+        if uploaded_file is not None:
+            try:
+                client.files.delete(name=uploaded_file.name)
+            except Exception:
+                logger.warning("Could not delete temporary Gemini file", exc_info=True)
