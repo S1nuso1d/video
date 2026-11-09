@@ -18,6 +18,8 @@ class AuditRecord(Base):
         Index("ix_audit_records_status_next_retry_at", "status", "next_retry_at"),
         Index("ix_audit_records_status_heartbeat_at", "status", "heartbeat_at"),
         Index("ix_audit_records_created_by_user_id", "created_by_user_id"),
+        Index("ix_audit_records_review_status_created_at", "review_status", "created_at"),
+        Index("ix_audit_records_reviewer_status", "reviewer_user_id", "review_status"),
     )
 
     id: Mapped[str] = mapped_column(
@@ -28,6 +30,20 @@ class AuditRecord(Base):
         String(36),
         ForeignKey("user_accounts.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    review_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="not_required", server_default="not_required"
+    )
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    human_review_decision: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    human_review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    human_reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    human_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     video_id: Mapped[str] = mapped_column(String(32), nullable=False)
     content_type: Mapped[str] = mapped_column(

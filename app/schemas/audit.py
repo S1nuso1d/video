@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Literal
 
@@ -141,6 +142,12 @@ class AuditResponse(BaseModel):
     criteria_results: dict | None = None
     decision: Literal["APPROVE", "REVIEW", "REJECT"] | None = None
     decision_summary: str | None = None
+    review_status: Literal["not_required", "pending", "assigned", "completed"] = "not_required"
+    reviewer_user_id: str | None = None
+    human_review_decision: Literal["approved", "rejected", "needs_changes"] | None = None
+    human_review_comment: str | None = None
+    human_reviewed_by_user_id: str | None = None
+    human_reviewed_at: datetime | None = None
     gemini_usage: dict | None = None
     gemini_cost_usd: float | None = None
     gemini_cost_rub: float | None = None

@@ -47,6 +47,19 @@ def get_me(
     return user
 
 
+@router.get("/reviewers", response_model=list[UserResponse])
+def list_reviewers(
+    db: Session = Depends(get_db),
+    _admin: UserAccount = Depends(require_roles("admin")),
+) -> list[UserAccount]:
+    statement = (
+        select(UserAccount)
+        .where(UserAccount.role == "reviewer", UserAccount.is_active.is_(True))
+        .order_by(UserAccount.email.asc())
+    )
+    return list(db.scalars(statement).all())
+
+
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: AdminUserCreate,
