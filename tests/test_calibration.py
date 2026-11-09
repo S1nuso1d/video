@@ -193,9 +193,7 @@ def test_invalid_verdict_is_rejected_with_line_number(tmp_path):
 
 def test_empty_dataset_is_rejected(tmp_path):
     dataset = tmp_path / "empty.jsonl"
-    dataset.write_text("
-  
-", encoding="utf-8")
+    dataset.write_text(chr(10) + "  " + chr(10), encoding="utf-8")
 
     with pytest.raises(CalibrationDataError, match="no calibration samples"):
         load_calibration_dataset(dataset)
