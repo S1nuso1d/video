@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -41,11 +42,9 @@ def test_cleanup_abandoned_temp_dirs(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(video_downloader.settings, "video_temp_root", str(tmp_path))
     old_dir = tmp_path / "old"
     old_dir.mkdir()
-    old_dir.touch()
+    os.utime(old_dir, (1_000, 1_000))
 
     monkeypatch.setattr(video_downloader.time, "time", lambda: 10_000)
-    old_time = 1_000
-    monkeypatch.setattr(video_downloader.Path, "stat", lambda self: type("Stat", (), {"st_mtime": old_time})())
 
-    # The implementation must tolerate cleanup of old directories without affecting URL logic.
-    assert video_downloader.cleanup_abandoned_temp_dirs(older_than_seconds=100) >= 1
+    assert video_downloader.cleanup_abandoned_temp_dirs(older_than_seconds=100) == 1
+    assert not old_dir.exists()
