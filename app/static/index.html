@@ -182,10 +182,53 @@ function appendCriteriaResults(parent,a){
  });
  section.append(rules);parent.append(section);
 }
+function appendCostMetrics(parent,a){
+ const usage=a.gemini_usage||null,metrics=a.processing_metrics||null;
+ if(!usage&&!metrics&&a.gemini_cost_usd==null&&a.gemini_cost_rub==null)return;
+ const box=node("div","comment");
+ box.append(node("div","label","Расход Gemini и время обработки"));
+ const tags=node("div","tags");
+ if(usage){
+  if(Number.isFinite(usage.request_count))tags.append(node("span","tag","Запросов: "+usage.request_count));
+  const counters=[
+   ["input_tokens","Входные токены"],
+   ["output_tokens","Выходные токены"],
+   ["thought_tokens","Thinking"],
+   ["cached_input_tokens","Из кэша"]
+  ];
+  counters.forEach(([key,label])=>{
+   if(Number.isFinite(usage[key]))tags.append(node("span","tag",label+": "+usage[key].toLocaleString("ru-RU")));
+  });
+  if(usage.usage_complete===false)tags.append(node("span","tag unknown","Не все usage-данные доступны"));
+ }
+ if(Number.isFinite(a.gemini_cost_usd)){
+  tags.append(node("span","tag passed","Gemini ≈ $"+a.gemini_cost_usd.toFixed(6)));
+ }else if(usage){
+  tags.append(node("span","tag unknown","Стоимость Gemini не рассчитана"));
+ }
+ if(Number.isFinite(a.gemini_cost_rub)){
+  tags.append(node("span","tag passed","≈ "+a.gemini_cost_rub.toLocaleString("ru-RU",{maximumFractionDigits:4})+" ₽"));
+ }
+ if(tags.childNodes.length)box.append(tags);
+ if(metrics){
+  const stageNames={download:"Загрузка",ffprobe:"FFprobe",opencv:"OpenCV",gemini:"Gemini"};
+  const stages=metrics.stage_totals_seconds||{};
+  const stageTags=node("div","tags");
+  Object.entries(stageNames).forEach(([key,label])=>{
+   if(Number.isFinite(stages[key]))stageTags.append(node("span","tag",label+": "+stages[key].toFixed(2)+" сек"));
+  });
+  if(Number.isFinite(metrics.total_seconds))stageTags.append(node("span","tag","Всего: "+metrics.total_seconds.toFixed(2)+" сек"));
+  if(Number.isFinite(metrics.attempt_count))stageTags.append(node("span","tag","Попыток: "+metrics.attempt_count));
+  if(stageTags.childNodes.length)box.append(stageTags);
+ }
+ box.append(node("div","defect-time","Стоимость — оценка по настроенному тарифу, не счёт Google. Для отображения суммы в рублях задайте GEMINI_USD_TO_RUB_RATE."));
+ parent.append(box);
+}
 function addList(parent,title,items){if(!Array.isArray(items)||!items.length)return;parent.append(node("div","section-title",title));const ul=node("ul","plain-list");items.forEach(x=>ul.append(node("li","",x)));parent.append(ul)}
 function renderResult(a){
 result.replaceChildren();subtitle.textContent="ID: "+a.id;const head=node("div","result-head"),about=node("div");about.append(node("h3","",a.video_id?"Видео "+a.video_id:"Аудит видео"));const link=node("a","result-url",a.youtube_url||"");link.href=a.youtube_url||"#";link.target="_blank";link.rel="noreferrer";about.append(link);const status=node("div");status.append(statusPill(a.status));if(a.status==="completed"&&a.verdict){status.append(document.createTextNode(" "));status.append(verdictPill(a.verdict))}if(a.decision){status.append(document.createTextNode(" "));status.append(decisionPill(a.decision))}head.append(about,status);result.append(head);
 appendTechnicalEvidence(result,a);appendVisualEvidence(result,a);appendCriteriaResults(result,a);
+appendCostMetrics(result,a);
 if(a.status==="pending"||a.status==="processing"){const box=node("div","comment"),line=node("div","loading");line.append(node("span","spinner"),document.createTextNode(a.status==="pending"?"Задание в очереди. Ожидаем worker…":"Модель анализирует видео. Это может занять несколько минут…"));box.append(line,node("div","comment-text","Статус обновится автоматически. Не отправляй ту же ссылку повторно."));result.append(box);return}
 if(a.status==="failed"){result.append(node("div","message show error",a.error_message||"Аудит завершился с ошибкой. Проверь журнал worker."));return}
 const r=a.report||{},summary=r.summary||a.summary;if(summary)result.append(node("p","summary",summary));

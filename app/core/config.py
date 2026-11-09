@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     gemini_retry_initial_delay: float = 1.0
     gemini_retry_max_delay: float = 8.0
 
+    # Standard paid-tier rate card for gemini-3.8-flash through 2026-12-31.
+    # Update these values when the model, billing tier, or Google pricing changes.
+    gemini_input_price_usd_per_million: float = 0.75
+    gemini_cached_input_price_usd_per_million: float = 0.075
+    gemini_output_price_usd_per_million: float = 3.75
+    gemini_pricing_version: str = "2026-11-standard-paid"
+    gemini_usd_to_rub_rate: float = 0.0
+
     # Video acquisition is isolated per audit and always cleaned up by the processor.
     yt_dlp_binary: str = "yt-dlp"
     video_temp_root: str = "storage/temp"
@@ -83,6 +91,14 @@ class Settings(BaseSettings):
             )
         if self.worker_recovery_interval_seconds < 1:
             raise ValueError("WORKER_RECOVERY_INTERVAL_SECONDS must be at least 1")
+        if self.gemini_input_price_usd_per_million < 0:
+            raise ValueError("GEMINI_INPUT_PRICE_USD_PER_MILLION must be non-negative")
+        if self.gemini_cached_input_price_usd_per_million < 0:
+            raise ValueError("GEMINI_CACHED_INPUT_PRICE_USD_PER_MILLION must be non-negative")
+        if self.gemini_output_price_usd_per_million < 0:
+            raise ValueError("GEMINI_OUTPUT_PRICE_USD_PER_MILLION must be non-negative")
+        if self.gemini_usd_to_rub_rate < 0:
+            raise ValueError("GEMINI_USD_TO_RUB_RATE must be non-negative")
         if self.ffprobe_timeout_seconds < 1:
             raise ValueError("FFPROBE_TIMEOUT_SECONDS must be at least 1")
         if self.cv_sample_interval_seconds <= 0:

@@ -182,6 +182,11 @@ All settings are loaded from `.env`.
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini model |
 | `GEMINI_TIMEOUT_MS` | `180000` | HTTP request timeout in milliseconds |
 | `GEMINI_RETRY_ATTEMPTS` | `3` | SDK attempts, including the first |
+| `GEMINI_INPUT_PRICE_USD_PER_MILLION` | `0.75` | Configured paid-tier input rate per 1M tokens |
+| `GEMINI_CACHED_INPUT_PRICE_USD_PER_MILLION` | `0.075` | Configured cached input rate per 1M tokens |
+| `GEMINI_OUTPUT_PRICE_USD_PER_MILLION` | `3.75` | Configured output rate per 1M tokens, including thinking |
+| `GEMINI_PRICING_VERSION` | `2026-11-standard-paid` | Rate-card identifier saved with usage data |
+| `GEMINI_USD_TO_RUB_RATE` | `0` | Optional USD-to-RUB conversion rate; 0 disables RUB estimate |
 | `YT_DLP_BINARY` | `yt-dlp` | Downloader executable |
 | `VIDEO_TEMP_ROOT` | `storage/temp` | Temporary video root |
 | `VIDEO_FORMAT` | `bv+ba/b` | yt-dlp format selector; downloads the best available source rendition without a 720p ceiling |
@@ -275,7 +280,17 @@ Example create-audit request:
 
 Technical fields are allow-listed; arbitrary Python paths or expressions are not accepted. `between` takes a two-item `value` array, for example `[30, 180]`. Visual `max_duration` uses seconds in `value`. Semantic codes must match the existing Gemini `DefectCategory` values. If no `criteria_spec` is supplied, the project decision remains `null` and the original SFT report flow is unchanged.
 
-**Resolution note:** the default yt-dlp selector is `bv*+ba/b`, so the worker no longer caps the download at 720p before checking the source. If your existing local `.env` contains the old `VIDEO_FORMAT=bv*[height<=720]+ba/b[height<=720]/b`, update that one line to `VIDEO_FORMAT=bv*+ba/b` manually; do not overwrite your `.env` or copy over API keys.
+**Resolution note:** the default yt-dlp selector is `bv+ba/b`, so the worker no longer caps the download at 720p before checking the source. If your existing local `.env` contains the old `VIDEO_FORMAT=bv*[height<=720]+ba/b[height<=720]/b`, update that one line to `VIDEO_FORMAT=bv+ba/b` manually; do not overwrite your `.env` or copy over API keys.
+
+## Gemini cost and processing observability
+
+For every completed or failed attempt where the Interactions API returns usage, Video Auditor records input/output/thinking/cached token counters and estimates the API cost. Output pricing already includes thinking tokens; they are shown separately for diagnostics and are not charged a second time. If Google omits usage counters, the request is recorded as having unknown usage and the estimated cost remains `null`; the application never estimates tokens from video duration.
+
+The pricing rate card is configurable in `.env`. Defaults target the Gemini 3.8 Flash **standard paid tier** through 2026-12-31: input USD 0.75 / 1M tokens, cached input USD 0.075 / 1M tokens, and output USD 3.75 / 1M tokens (including thinking tokens). Google has published different rates effective 2027-01-01; update the three rates and `GEMINI_PRICING_VERSION` before that date, or whenever the selected model/billing tier changes. These are estimated costs based on a configured rate card, not provider invoices. Set `GEMINI_USD_TO_RUB_RATE` to the exchange rate selected by your finance process to show an estimated ruble amount; it defaults to 0, which disables RUB conversion.
+
+Each audit also stores per-attempt duration for download, FFprobe, OpenCV, and Gemini, plus cumulative timing across worker retries. Usage/costs from a Gemini response are preserved even when later report validation fails and the worker retries. Manual requeue clears historical usage/cost and timing fields so the next run starts a new measurement.
+
+The API response exposes `gemini_usage`, `gemini_cost_usd`, `gemini_cost_rub`, and `processing_metrics`. The web interface shows token counts, estimate availability, and stage timings.
 
 ## Expert-labelled dataset calibration
 

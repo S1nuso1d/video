@@ -1,5 +1,6 @@
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from app.core.config import settings
 from app.rules.sft_stage1_ru import build_audit_prompt
 from app.schemas.audit import AuditReport
 from app.services.report_policy import enforce_conservative_policy
+from app.services.gemini_costs import normalise_interaction_usage
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,13 @@ RETRYABLE_HTTP_STATUS_CODES = (408, 429, 500, 502, 503, 504)
 
 class GeminiConfigurationError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class GeminiAuditResult:
+    report: AuditReport
+    usage: dict[str, int | None] | None
+    request_made: bool = True
 
 
 class GeminiAuditError(RuntimeError):
@@ -29,10 +38,14 @@ class GeminiAuditError(RuntimeError):
         *,
         retryable: bool = False,
         status_code: int | None = None,
+        usage: dict[str, int | None] | None = None,
+        request_made: bool = False,
     ) -> None:
         super().__init__(message)
         self.retryable = retryable
         self.status_code = status_code
+        self.usage = usage
+        self.request_made = request_made
 
 
 def _status_code(exc: Exception) -> int | None:
@@ -141,6 +154,8 @@ def analyze_youtube_video(
 
     client = _make_client()
     uploaded_file = None
+    interaction_usage: dict[str, int | None] | None = None
+    request_made = False
     try:
         if local_video_path is not None:
             uploaded_file = client.files.upload(file=local_video_path)
@@ -161,12 +176,28 @@ def analyze_youtube_video(
                 "schema": AuditReport.model_json_schema(),
             },
         )
+        request_made = True
+        interaction_usage = normalise_interaction_usage(
+            getattr(interaction, "usage", None)
+        )
         output_text = interaction.output_text
         if not output_text:
-            raise GeminiAuditError("Gemini API вернул пустой ответ.")
+            raise GeminiAuditError(
+                "Gemini API вернул пустой ответ.",
+                usage=interaction_usage,
+                request_made=True,
+            )
         report = AuditReport.model_validate_json(output_text)
-        return enforce_conservative_policy(report)
-    except (GeminiConfigurationError, GeminiAuditError):
+        return GeminiAuditResult(
+            report=enforce_conservative_policy(report),
+            usage=interaction_usage,
+            request_made=True,
+        )
+    except (GeminiConfigurationError, GeminiAuditError) as exc:
+        if isinstance(exc, GeminiAuditError):
+            if exc.usage is None:
+                exc.usage = interaction_usage
+            exc.request_made = exc.request_made or request_made
         raise
     except Exception as exc:
         retryable = is_retryable_gemini_error(exc)
@@ -183,6 +214,8 @@ def analyze_youtube_video(
             describe_gemini_error(exc),
             retryable=retryable,
             status_code=status_code,
+            usage=interaction_usage,
+            request_made=request_made,
         ) from exc
     finally:
         if uploaded_file is not None:

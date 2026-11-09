@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -9,8 +10,14 @@ from app.core.database import SessionLocal
 from app.models.audit import AuditRecord
 from app.services.gemini_auditor import (
     GeminiAuditError,
+    GeminiAuditResult,
     GeminiConfigurationError,
     analyze_youtube_video,
+)
+from app.services.gemini_costs import (
+    aggregate_processing_metrics,
+    aggregate_usage,
+    build_usage_attempt,
 )
 from app.services.video_downloader import (
     DownloadedVideo,
@@ -53,11 +60,24 @@ def process_audit(audit_id: str, lease_token: str) -> None:
         content_type = record.content_type
         criteria_spec = record.criteria_spec
         current_attempt = int(record.attempt_count or 0)
+        previous_usage = record.gemini_usage
+        previous_metrics = record.processing_metrics
 
     downloaded: DownloadedVideo | None = None
+    attempt_started = time.perf_counter()
+    active_stage: str | None = None
+    stage_started: float | None = None
+    stage_durations: dict[str, float] = {}
+    attempt_usage: dict[str, int | None] | None = None
+    request_made = False
     try:
         logger.info("Downloading source video for audit %s", audit_id)
+        active_stage = "download"
+        stage_started = time.perf_counter()
         downloaded = download_video(youtube_url, audit_id)
+        stage_durations["download"] = round(time.perf_counter() - stage_started, 3)
+        active_stage = None
+        stage_started = None
         downloaded_size = downloaded.path.stat().st_size
         logger.info(
             "Downloaded audit %s to temporary file (%s bytes)",
@@ -66,6 +86,8 @@ def process_audit(audit_id: str, lease_token: str) -> None:
         )
 
         try:
+            active_stage = "ffprobe"
+            stage_started = time.perf_counter()
             probe_result = probe_video(downloaded.path)
             technical_metadata = probe_result.metadata
             technical_findings = probe_result.findings
@@ -90,8 +112,17 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 }
             ]
             logger.warning("Skipping technical metadata for audit %s: %s", audit_id, exc)
+        finally:
+            if active_stage == "ffprobe" and stage_started is not None:
+                stage_durations["ffprobe"] = round(
+                    time.perf_counter() - stage_started, 3
+                )
+                active_stage = None
+                stage_started = None
 
         try:
+            active_stage = "opencv"
+            stage_started = time.perf_counter()
             frame_result = analyze_video_frames(
                 downloaded.path,
                 duration_seconds=(
@@ -130,6 +161,13 @@ def process_audit(audit_id: str, lease_token: str) -> None:
             logger.warning(
                 "Skipping OpenCV frame analysis for audit %s: %s", audit_id, exc
             )
+        finally:
+            if active_stage == "opencv" and stage_started is not None:
+                stage_durations["opencv"] = round(
+                    time.perf_counter() - stage_started, 3
+                )
+                active_stage = None
+                stage_started = None
 
         # Persist deterministic evidence before the expensive AI request. The
         # update is fenced so an expired worker cannot attach evidence to a new attempt.
@@ -157,11 +195,23 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 )
                 return
 
-        report = analyze_youtube_video(
+        active_stage = "gemini"
+        stage_started = time.perf_counter()
+        gemini_result = analyze_youtube_video(
             youtube_url,
             content_type,
             local_video_path=downloaded.path,
         )
+        stage_durations["gemini"] = round(time.perf_counter() - stage_started, 3)
+        active_stage = None
+        stage_started = None
+        if isinstance(gemini_result, GeminiAuditResult):
+            report = gemini_result.report
+            attempt_usage = gemini_result.usage
+            request_made = gemini_result.request_made
+        else:
+            # Keep processor integrations and existing test doubles compatible.
+            report = gemini_result
         report_dict = report.model_dump(mode="json")
         criteria_results = evaluate_criteria(
             criteria_spec,
@@ -175,6 +225,24 @@ def process_audit(audit_id: str, lease_token: str) -> None:
         )
         decision_summary = (
             criteria_results.get("summary") if criteria_results is not None else None
+        )
+        usage_attempt = build_usage_attempt(
+            attempt_usage,
+            request_made=request_made,
+            attempt_number=current_attempt,
+            model=settings.gemini_model,
+            pricing_version=settings.gemini_pricing_version,
+            input_price_usd_per_million=settings.gemini_input_price_usd_per_million,
+            cached_input_price_usd_per_million=settings.gemini_cached_input_price_usd_per_million,
+            output_price_usd_per_million=settings.gemini_output_price_usd_per_million,
+            usd_to_rub_rate=settings.gemini_usd_to_rub_rate,
+        )
+        usage_summary = aggregate_usage(previous_usage, usage_attempt)
+        processing_metrics = aggregate_processing_metrics(
+            previous_metrics,
+            attempt_number=current_attempt,
+            stage_durations=stage_durations,
+            total_seconds=time.perf_counter() - attempt_started,
         )
         now = datetime.now(timezone.utc)
         with SessionLocal() as db:
@@ -196,6 +264,18 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                     criteria_results=criteria_results,
                     decision=project_decision,
                     decision_summary=decision_summary,
+                    gemini_usage=usage_summary,
+                    gemini_cost_usd=(
+                        usage_summary.get("estimated_cost_usd")
+                        if usage_summary is not None
+                        else None
+                    ),
+                    gemini_cost_rub=(
+                        usage_summary.get("estimated_cost_rub")
+                        if usage_summary is not None
+                        else None
+                    ),
+                    processing_metrics=processing_metrics,
                     status="completed",
                     error_message=None,
                     next_retry_at=None,
@@ -221,6 +301,31 @@ def process_audit(audit_id: str, lease_token: str) -> None:
             project_decision or "not_configured",
         )
     except Exception as exc:
+        if active_stage is not None and stage_started is not None:
+            stage_durations[active_stage] = round(
+                time.perf_counter() - stage_started, 3
+            )
+        if isinstance(exc, GeminiAuditError):
+            attempt_usage = exc.usage
+            request_made = exc.request_made
+        usage_attempt = build_usage_attempt(
+            attempt_usage,
+            request_made=request_made,
+            attempt_number=current_attempt,
+            model=settings.gemini_model,
+            pricing_version=settings.gemini_pricing_version,
+            input_price_usd_per_million=settings.gemini_input_price_usd_per_million,
+            cached_input_price_usd_per_million=settings.gemini_cached_input_price_usd_per_million,
+            output_price_usd_per_million=settings.gemini_output_price_usd_per_million,
+            usd_to_rub_rate=settings.gemini_usd_to_rub_rate,
+        )
+        usage_summary = aggregate_usage(previous_usage, usage_attempt)
+        processing_metrics = aggregate_processing_metrics(
+            previous_metrics,
+            attempt_number=current_attempt,
+            stage_durations=stage_durations,
+            total_seconds=time.perf_counter() - attempt_started,
+        )
         now = datetime.now(timezone.utc)
         retryable = isinstance(exc, GeminiAuditError) and exc.retryable
         rate_limited = isinstance(exc, GeminiAuditError) and exc.status_code == 429
@@ -258,6 +363,18 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 )
                 .values(
                     error_message=safe_message,
+                    gemini_usage=usage_summary,
+                    gemini_cost_usd=(
+                        usage_summary.get("estimated_cost_usd")
+                        if usage_summary is not None
+                        else None
+                    ),
+                    gemini_cost_rub=(
+                        usage_summary.get("estimated_cost_rub")
+                        if usage_summary is not None
+                        else None
+                    ),
+                    processing_metrics=processing_metrics,
                     updated_at=now,
                     status="pending" if will_retry else "failed",
                     next_retry_at=next_retry_at,
