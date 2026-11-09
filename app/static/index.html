@@ -54,6 +54,41 @@ if(a.status==="failed"){result.append(node("div","message show error",a.error_me
 const r=a.report||{},summary=r.summary||a.summary;if(summary)result.append(node("p","summary",summary));
 const comment=r.markup_comment||a.markup_comment;if(comment){const box=node("div","comment");box.append(node("div","label","Комментарий для разметки"),node("div","comment-text",comment));const copy=node("button","secondary","Скопировать комментарий");copy.type="button";copy.style.marginTop="11px";copy.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(comment);copy.textContent="Скопировано"}catch(_){copy.textContent="Не удалось скопировать"}});box.append(copy);result.append(box)}
 const meta=node("div","tags");meta.append(node("span","tag","Тип: "+(types[a.content_type]||a.content_type||"Не указан")));if(r.review_coverage)meta.append(node("span","tag","Покрытие: "+(coverage[r.review_coverage]||r.review_coverage)));const defects=Array.isArray(r.detected_defects)?r.detected_defects:(a.detected_defects||[]);meta.append(node("span","tag","Дефектов: "+defects.length));result.append(meta);
+const technical=a.technical_metadata||null;
+const technicalFindings=Array.isArray(a.technical_findings)?a.technical_findings:[];
+if(technical){
+ const v=technical.video||{},audio=Array.isArray(technical.audio_streams)?technical.audio_streams:[];
+ const technicalTags=node("div","tags");
+ const duration=Number.isFinite(technical.duration_seconds)?technical.duration_seconds.toFixed(2)+" sec":"—";
+ const resolution=v.width&&v.height?(v.width+" × "+v.height):"—";
+ const fps=Number.isFinite(v.frame_rate)?(v.frame_rate.toFixed(2)+" FPS"):"FPS unavailable";
+ const codec=v.codec||"codec unknown";
+ const audioText=technical.has_audio?"Audio: "+audio.map(x=>x.codec||"unknown").join(", "):"No audio stream";
+ technicalTags.append(
+  node("span","tag","Duration: "+duration),
+  node("span","tag","Resolution: "+resolution),
+  node("span","tag",fps),
+  node("span","tag","Video: "+codec),
+  node("span","tag",audioText)
+ );
+ if(Number.isFinite(technical.file_size_bytes))technicalTags.append(node("span","tag","File: "+(technical.file_size_bytes/1048576).toFixed(1)+" MB"));
+ result.append(node("div","section-title","Technical metadata · FFprobe"),technicalTags);
+}
+if(technicalFindings.length){
+ result.append(node("div","section-title","Technical observations"));
+ const technicalList=node("div","defects");
+ const technicalLabels={video_under_5_seconds:"Video shorter than 5 seconds",audio_stream_missing:"Audio stream not found",frame_rate_unavailable:"Frame rate unavailable",ffprobe_unavailable:"FFprobe unavailable"};
+ technicalFindings.forEach(f=>{
+  const card=node("article","defect"),top=node("div","defect-top"),name=node("div");
+  name.append(node("div","defect-name",technicalLabels[f.code]||f.code||"Technical observation"));
+  top.append(name,node("span","tag"+(f.severity==="critical"?" critical":""),f.severity||"observation"));
+  card.append(top);
+  if(f.description)card.append(node("div","defect-desc",f.description));
+  if(f.evidence&&typeof f.evidence.duration_seconds==="number")card.append(node("div","defect-time","Measured duration: "+f.evidence.duration_seconds.toFixed(3)+" sec"));
+  technicalList.append(card);
+ });
+ result.append(technicalList);
+}
 result.append(node("div","section-title","Обнаруженные признаки"));if(!defects.length)result.append(node("div","empty","В отчёте нет подтверждённых дефектов. Это не гарантирует отсутствие всех проблем."));
 else{const list=node("div","defects");defects.forEach(d=>{const card=node("article","defect"),top=node("div","defect-top"),name=node("div");name.append(node("div","defect-name",categories[d.category]||d.category||"Другой дефект"));const time=[d.start_time,d.end_time].filter(Boolean).join(" – ");name.append(node("div","defect-time",time?"Ориентировочно: "+time:"Временная метка не указана"));const sevClass=d.severity==="critical"?" critical":(d.severity==="uncertain"?" uncertain":"");top.append(name,node("span","tag"+sevClass,severities[d.severity]||d.severity||"Не задана"));card.append(top);if(d.description)card.append(node("div","defect-desc",d.description));const tags=node("div","tags");if(d.confidence)tags.append(node("span","tag",confidences[d.confidence]||d.confidence));tags.append(node("span","tag",typeof d.estimated_video_fraction==="number"?(Math.round(d.estimated_video_fraction*100)+"% длительности"):"Доля не оценена"));card.append(tags);list.append(card)});result.append(list)}
 addList(result,"Не удалось проверить надёжно",r.not_assessed||[]);addList(result,"Причины ручной проверки",r.manual_review_reasons||[]);const footer=node("div","footer-links"),video=node("a","","Открыть видео на YouTube ↗"),docs=node("a","","Открыть документацию API ↗");video.href=a.youtube_url;video.target="_blank";video.rel="noreferrer";docs.href="/docs";docs.target="_blank";docs.rel="noreferrer";footer.append(video,docs);result.append(footer)
