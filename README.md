@@ -184,7 +184,7 @@ All settings are loaded from `.env`.
 | `GEMINI_RETRY_ATTEMPTS` | `3` | SDK attempts, including the first |
 | `YT_DLP_BINARY` | `yt-dlp` | Downloader executable |
 | `VIDEO_TEMP_ROOT` | `storage/temp` | Temporary video root |
-| `VIDEO_FORMAT` | `bv*+ba/b` | yt-dlp format selector; downloads the best available source rendition without a 720p ceiling |
+| `VIDEO_FORMAT` | `bv+ba/b` | yt-dlp format selector; downloads the best available source rendition without a 720p ceiling |
 | `VIDEO_MAX_FILESIZE_BYTES` | `1500000000` | Maximum download size |
 | `VIDEO_DOWNLOAD_TIMEOUT_SECONDS` | `900` | Download timeout |
 | `FFPROBE_BINARY` | `ffprobe` | FFprobe executable |
