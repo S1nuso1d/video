@@ -9,6 +9,7 @@ from app.models.audit import AuditRecord
 from app.services import processor
 from app.services.video_downloader import DownloadedVideo
 from app.services.video_probe import VideoProbeResult
+from app.services.frame_analyzer import FrameAnalysisResult, OpenCVUnavailableError
 
 
 def _make_db(tmp_path, monkeypatch):
