@@ -1,7 +1,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from sqlalchemy import case, update
+from sqlalchemy import case, select, update
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -21,19 +22,25 @@ from app.services.video_downloader import (
 logger = logging.getLogger(__name__)
 
 
-def process_audit(audit_id: str) -> None:
-    """Run one audit using an isolated local video download."""
+def process_audit(audit_id: str, lease_token: str) -> None:
+    """Process an audit only while the supplied worker lease remains valid."""
     with SessionLocal() as db:
-        record = db.get(AuditRecord, audit_id)
+        record = db.scalar(
+            select(AuditRecord).where(
+                AuditRecord.id == audit_id,
+                AuditRecord.status == "processing",
+                AuditRecord.lease_token == lease_token,
+            )
+        )
         if record is None:
-            logger.error("Audit record %s disappeared before processing", audit_id)
+            logger.warning(
+                "Skipping audit %s because this worker no longer owns its lease",
+                audit_id,
+            )
             return
         youtube_url = record.youtube_url
         content_type = record.content_type
-        current_attempt = int(record.attempt_count or 0) + 1
-        record.attempt_count = current_attempt
-        record.updated_at = datetime.now(timezone.utc)
-        db.commit()
+        current_attempt = int(record.attempt_count or 0)
 
     downloaded: DownloadedVideo | None = None
     try:
@@ -51,29 +58,47 @@ def process_audit(audit_id: str) -> None:
             local_video_path=downloaded.path,
         )
         report_dict = report.model_dump(mode="json")
+        now = datetime.now(timezone.utc)
         with SessionLocal() as db:
-            record = db.get(AuditRecord, audit_id)
-            if record is None:
-                return
-            record.report = report_dict
-            record.verdict = report.verdict.value
-            record.summary = report.summary
-            record.detected_defects = [
-                item.model_dump(mode="json") for item in report.detected_defects
-            ]
-            record.markup_comment = report.markup_comment
-            record.status = "completed"
-            record.error_message = None
-            record.next_retry_at = None
-            record.completed_at = datetime.now(timezone.utc)
-            record.updated_at = datetime.now(timezone.utc)
+            result = db.execute(
+                update(AuditRecord)
+                .where(
+                    AuditRecord.id == audit_id,
+                    AuditRecord.status == "processing",
+                    AuditRecord.lease_token == lease_token,
+                )
+                .values(
+                    report=report_dict,
+                    verdict=report.verdict.value,
+                    summary=report.summary,
+                    detected_defects=[
+                        item.model_dump(mode="json") for item in report.detected_defects
+                    ],
+                    markup_comment=report.markup_comment,
+                    status="completed",
+                    error_message=None,
+                    next_retry_at=None,
+                    heartbeat_at=None,
+                    worker_id=None,
+                    lease_token=None,
+                    completed_at=now,
+                    updated_at=now,
+                )
+            )
             db.commit()
+            if result.rowcount != 1:
+                logger.warning(
+                    "Discarded result for audit %s because the worker lease expired",
+                    audit_id,
+                )
+                return
+
         logger.info("Audit %s completed with verdict=%s", audit_id, report.verdict.value)
     except Exception as exc:
         now = datetime.now(timezone.utc)
         retryable = isinstance(exc, GeminiAuditError) and exc.retryable
         rate_limited = isinstance(exc, GeminiAuditError) and exc.status_code == 429
-        max_attempts = max(1, settings.audit_max_attempts)
+        max_attempts = max(1, int(settings.audit_max_attempts))
         will_retry = retryable and current_attempt < max_attempts
 
         if isinstance(exc, (GeminiAuditError, GeminiConfigurationError, VideoDownloadError)):
@@ -82,33 +107,42 @@ def process_audit(audit_id: str) -> None:
             safe_message = "Не удалось завершить анализ. Проверьте настройки и журнал Worker."
 
         cooldown_seconds = max(30, int(settings.gemini_rate_limit_cooldown_seconds))
-        cooldown_until = now + timedelta(seconds=cooldown_seconds) if rate_limited else None
+        base_delay = max(1, int(settings.audit_retry_delay_seconds)) * (
+            2 ** max(0, current_attempt - 1)
+        )
+        delay_seconds = max(base_delay, cooldown_seconds) if rate_limited else base_delay
+        next_retry_at = now + timedelta(seconds=delay_seconds) if will_retry else None
 
         with SessionLocal() as db:
-            record = db.get(AuditRecord, audit_id)
-            if record is not None:
-                record.error_message = safe_message
-                record.updated_at = now
-                if will_retry:
-                    base_delay = max(1, settings.audit_retry_delay_seconds) * (
-                        2 ** (current_attempt - 1)
-                    )
-                    delay = max(base_delay, cooldown_seconds) if rate_limited else base_delay
-                    record.status = "pending"
-                    record.next_retry_at = now + timedelta(seconds=delay)
-                    record.completed_at = None
-                else:
-                    record.status = "failed"
-                    record.next_retry_at = None
-                    record.completed_at = now
+            result = db.execute(
+                update(AuditRecord)
+                .where(
+                    AuditRecord.id == audit_id,
+                    AuditRecord.status == "processing",
+                    AuditRecord.lease_token == lease_token,
+                )
+                .values(
+                    error_message=safe_message,
+                    updated_at=now,
+                    status="pending" if will_retry else "failed",
+                    next_retry_at=next_retry_at,
+                    completed_at=None if will_retry else now,
+                    started_at=None if will_retry else AuditRecord.started_at,
+                    heartbeat_at=None,
+                    worker_id=None,
+                    lease_token=None,
+                )
+            )
+            still_owner = result.rowcount == 1
 
-            if rate_limited and cooldown_until is not None:
+            if still_owner and rate_limited:
+                cooldown_until = now + timedelta(seconds=cooldown_seconds)
                 deferred_retry_at = case(
                     (AuditRecord.next_retry_at.is_(None), cooldown_until),
                     (AuditRecord.next_retry_at < cooldown_until, cooldown_until),
                     else_=AuditRecord.next_retry_at,
                 )
-                result = db.execute(
+                deferred = db.execute(
                     update(AuditRecord)
                     .where(
                         AuditRecord.status == "pending",
@@ -119,17 +153,30 @@ def process_audit(audit_id: str) -> None:
                         updated_at=now,
                     )
                 )
-                deferred_count = int(result.rowcount or 0)
                 logger.warning(
                     "Gemini HTTP 429: deferred %s queued audits for at least %s seconds",
-                    deferred_count,
+                    int(deferred.rowcount or 0),
                     cooldown_seconds,
                 )
             db.commit()
 
-        if retryable:
+        if not still_owner:
             logger.warning(
-                "Audit %s attempt %s/%s failed: %s",
+                "Ignored failure for audit %s because this worker no longer owns its lease",
+                audit_id,
+            )
+        elif retryable and will_retry:
+            logger.warning(
+                "Audit %s attempt %s/%s failed; retry scheduled at %s: %s",
+                audit_id,
+                current_attempt,
+                max_attempts,
+                next_retry_at.isoformat() if next_retry_at else "n/a",
+                safe_message,
+            )
+        elif retryable:
+            logger.warning(
+                "Audit %s exhausted retry budget at attempt %s/%s: %s",
                 audit_id,
                 current_attempt,
                 max_attempts,

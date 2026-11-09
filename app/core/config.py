@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,11 +31,29 @@ class Settings(BaseSettings):
     audit_max_attempts: int = 2
     audit_retry_delay_seconds: int = 30
     gemini_rate_limit_cooldown_seconds: int = 120
+
+    # A worker must refresh its lease much more frequently than the lease expiry.
     worker_poll_seconds: float = 2.0
-    stale_job_minutes: int = 240
+    worker_heartbeat_seconds: int = 15
+    worker_lease_timeout_seconds: int = 90
+    worker_recovery_interval_seconds: int = 15
+
     gemini_poll_seconds: int = 5
     gemini_max_wait_seconds: int = 1800
     log_level: str = "INFO"
+
+    @model_validator(mode="after")
+    def validate_worker_lease_settings(self):
+        if self.worker_heartbeat_seconds < 1:
+            raise ValueError("WORKER_HEARTBEAT_SECONDS must be at least 1")
+        if self.worker_lease_timeout_seconds < self.worker_heartbeat_seconds * 3:
+            raise ValueError(
+                "WORKER_LEASE_TIMEOUT_SECONDS must be at least three times "
+                "WORKER_HEARTBEAT_SECONDS"
+            )
+        if self.worker_recovery_interval_seconds < 1:
+            raise ValueError("WORKER_RECOVERY_INTERVAL_SECONDS must be at least 1")
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",
