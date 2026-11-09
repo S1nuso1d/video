@@ -119,6 +119,10 @@ def claim_next_job(worker_id: str) -> WorkerClaim | None:
                 record.next_retry_at = None
                 record.completed_at = None
                 record.error_message = None
+                # Do not expose technical evidence from a previous attempt
+                # while the current attempt is being evaluated.
+                record.technical_metadata = None
+                record.technical_findings = None
                 record.updated_at = now
                 claim = WorkerClaim(
                     audit_id=record.id,

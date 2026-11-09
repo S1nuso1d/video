@@ -33,10 +33,16 @@ def main() -> int:
         record.summary = None
         record.report = None
         record.detected_defects = None
+        record.technical_metadata = None
+        record.technical_findings = None
         record.markup_comment = None
         record.error_message = None
         record.started_at = None
         record.completed_at = None
+        record.heartbeat_at = None
+        record.worker_id = None
+        record.lease_token = None
+        record.next_retry_at = None
         record.updated_at = datetime.now(timezone.utc)
         db.commit()
 

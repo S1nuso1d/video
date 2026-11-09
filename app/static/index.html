@@ -46,9 +46,47 @@ function stop(){if(timer)clearTimeout(timer);timer=null}function poll(){stop();t
 async function refreshCurrent(){await loadHistory();await health();if(selected){try{const a=await api("/api/v1/audits/"+encodeURIComponent(selected));renderResult(a);if(a.status==="pending"||a.status==="processing")poll();else stop()}catch(e){renderError(errText(e))}}}
 async function openAudit(id){selected=id;renderHistory();result.replaceChildren(node("div","loading","Загружаем результат…"));try{const a=await api("/api/v1/audits/"+encodeURIComponent(id));renderResult(a);if(a.status==="pending"||a.status==="processing")poll();else stop();renderHistory()}catch(e){stop();renderError(errText(e))}}
 function renderError(text){subtitle.textContent="Не удалось загрузить";result.replaceChildren(node("div","message show error",text))}
+function appendTechnicalEvidence(parent,a){
+ const technical=a.technical_metadata||null;
+ const technicalFindings=Array.isArray(a.technical_findings)?a.technical_findings:[];
+ if(technical){
+  const v=technical.video||{},audio=Array.isArray(technical.audio_streams)?technical.audio_streams:[];
+  const tags=node("div","tags");
+  const duration=Number.isFinite(technical.duration_seconds)?technical.duration_seconds.toFixed(2)+" сек":"—";
+  const resolution=v.width&&v.height?(v.width+" × "+v.height):"—";
+  const fps=Number.isFinite(v.frame_rate)?(v.frame_rate.toFixed(2)+" FPS"):"FPS не определён";
+  const codec=v.codec||"кодек неизвестен";
+  const audioText=technical.has_audio?"Аудио: "+audio.map(x=>x.codec||"неизвестно").join(", "):"Аудиодорожка отсутствует";
+  tags.append(
+   node("span","tag","Длительность: "+duration),
+   node("span","tag","Разрешение: "+resolution),
+   node("span","tag",fps),
+   node("span","tag","Видеокодек: "+codec),
+   node("span","tag",audioText)
+  );
+  if(Number.isFinite(technical.file_size_bytes))tags.append(node("span","tag","Размер файла: "+(technical.file_size_bytes/1048576).toFixed(1)+" МБ"));
+  parent.append(node("div","section-title","Технические параметры · FFprobe"),tags);
+ }
+ if(technicalFindings.length){
+  parent.append(node("div","section-title","Технические наблюдения"));
+  const list=node("div","defects");
+  const labels={video_under_5_seconds:"Видео короче 5 секунд",audio_stream_missing:"Аудиодорожка не найдена",frame_rate_unavailable:"Не удалось определить FPS",ffprobe_unavailable:"FFprobe недоступен"};
+  technicalFindings.forEach(f=>{
+   const card=node("article","defect"),top=node("div","defect-top"),name=node("div");
+   name.append(node("div","defect-name",labels[f.code]||f.code||"Техническое наблюдение"));
+   top.append(name,node("span","tag"+(f.severity==="critical"?" critical":""),f.severity||"observation"));
+   card.append(top);
+   if(f.description)card.append(node("div","defect-desc",f.description));
+   if(f.evidence&&typeof f.evidence.duration_seconds==="number")card.append(node("div","defect-time","Измеренная длительность: "+f.evidence.duration_seconds.toFixed(3)+" сек"));
+   list.append(card);
+  });
+  parent.append(list);
+ }
+}
 function addList(parent,title,items){if(!Array.isArray(items)||!items.length)return;parent.append(node("div","section-title",title));const ul=node("ul","plain-list");items.forEach(x=>ul.append(node("li","",x)));parent.append(ul)}
 function renderResult(a){
 result.replaceChildren();subtitle.textContent="ID: "+a.id;const head=node("div","result-head"),about=node("div");about.append(node("h3","",a.video_id?"Видео "+a.video_id:"Аудит видео"));const link=node("a","result-url",a.youtube_url||"");link.href=a.youtube_url||"#";link.target="_blank";link.rel="noreferrer";about.append(link);const status=node("div");status.append(statusPill(a.status));if(a.status==="completed"&&a.verdict){status.append(document.createTextNode(" "));status.append(verdictPill(a.verdict))}head.append(about,status);result.append(head);
+appendTechnicalEvidence(result,a);
 if(a.status==="pending"||a.status==="processing"){const box=node("div","comment"),line=node("div","loading");line.append(node("span","spinner"),document.createTextNode(a.status==="pending"?"Задание в очереди. Ожидаем worker…":"Модель анализирует видео. Это может занять несколько минут…"));box.append(line,node("div","comment-text","Статус обновится автоматически. Не отправляй ту же ссылку повторно."));result.append(box);return}
 if(a.status==="failed"){result.append(node("div","message show error",a.error_message||"Аудит завершился с ошибкой. Проверь журнал worker."));return}
 const r=a.report||{},summary=r.summary||a.summary;if(summary)result.append(node("p","summary",summary));
