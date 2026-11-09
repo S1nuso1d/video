@@ -603,10 +603,11 @@ def analyze_video_frames(
             "sampling_was_capped": len(frame_indices) >= max_samples,
             "analysis_resolution_width": min(resize_width, original_width or resize_width),
         }
-        return FrameAnalysisResult(
-            metadata=metadata,
-            findings=_build_findings(samples, actual_interval, duration),
-        )
+        findings = _build_findings(samples, actual_interval, duration)
+        evidence_frame_count = _attach_evidence_frames(findings, samples, capture)
+        metadata["evidence_frames"] = evidence_frame_count
+        metadata["evidence_width"] = max(64, int(settings.cv_evidence_width))
+        return FrameAnalysisResult(metadata=metadata, findings=findings)
     except VideoFrameAnalysisError:
         raise
     except Exception as exc:
