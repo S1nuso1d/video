@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class ReviewStatus(str, Enum):
     NOT_REQUIRED = "not_required"
     PENDING = "pending"
-    ASSIGNED = "assigned"
+    ASSIGNED = "assigned"  # Accepted for historical records created by older versions.
     COMPLETED = "completed"
 
 
@@ -15,23 +15,6 @@ class HumanReviewDecision(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     NEEDS_CHANGES = "needs_changes"
-
-
-class ReviewAssignmentRequest(BaseModel):
-    reviewer_user_id: str | None = Field(
-        ...,
-        min_length=1,
-        description="Reviewer account ID; null clears the assignment",
-    )
-    comment: str | None = Field(default=None, max_length=1000)
-
-    @field_validator("comment")
-    @classmethod
-    def normalize_comment(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        value = value.strip()
-        return value or None
 
 
 class HumanReviewDecisionRequest(BaseModel):
@@ -76,7 +59,6 @@ class HumanReviewEventResponse(BaseModel):
 
     id: str
     audit_id: str
-    actor_user_id: str | None = None
     action: str
     from_status: str | None = None
     to_status: str | None = None
