@@ -58,16 +58,17 @@ def _extract_prediction_defects(prediction: Mapping[str, Any]) -> set[str]:
     report = prediction.get("report")
     report = report if isinstance(report, Mapping) else {}
 
-    detected = report.get("detected_defects")
-    if not isinstance(detected, list):
-        detected = prediction.get("detected_defects", [])
+    detected_sources = [
+        ("prediction.report.detected_defects", report.get("detected_defects", [])),
+        ("prediction.detected_defects", prediction.get("detected_defects", [])),
+    ]
 
     labels: set[str] = set()
-    for field, items in (
-        ("prediction.detected_defects", detected),
+    sources = detected_sources + [
         ("prediction.technical_findings", prediction.get("technical_findings", [])),
         ("prediction.visual_findings", prediction.get("visual_findings", [])),
-    ):
+    ]
+    for field, items in sources:
         if items is None:
             continue
         if not isinstance(items, list):
