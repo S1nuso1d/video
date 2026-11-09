@@ -23,7 +23,9 @@ class Settings(BaseSettings):
     # Video acquisition is isolated per audit and always cleaned up by the processor.
     yt_dlp_binary: str = "yt-dlp"
     video_temp_root: str = "storage/temp"
-    video_format: str = "bv*[height<=720]+ba/b[height<=720]/b"
+    # Keep the best available source resolution; project rules (for example 1080p)
+    # must assess the source rather than a downloader-capped 720p rendition.
+    video_format: str = "bv+ba/b"
     video_max_filesize_bytes: int = 1_500_000_000
     video_download_timeout_seconds: int = 900
 

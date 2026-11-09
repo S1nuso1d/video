@@ -1,0 +1,50 @@
+{
+  "name": "Outdoor people videos",
+  "version": "1.0",
+  "rules": [
+    {
+      "id": "minimum_height",
+      "type": "technical",
+      "field": "height",
+      "operator": "gte",
+      "value": 1080,
+      "severity": "critical",
+      "description": "Source video must be at least 1080 pixels high."
+    },
+    {
+      "id": "duration_range",
+      "type": "technical",
+      "field": "duration_seconds",
+      "operator": "between",
+      "value": [30, 180],
+      "severity": "critical",
+      "description": "Video duration must be between 30 and 180 seconds."
+    },
+    {
+      "id": "audio_required",
+      "type": "technical",
+      "field": "has_audio",
+      "operator": "eq",
+      "value": true,
+      "severity": "warning",
+      "description": "An audio stream should be present."
+    },
+    {
+      "id": "black_screen_limit",
+      "type": "visual",
+      "code": "black_frame_segment",
+      "operator": "max_duration",
+      "value": 2.0,
+      "severity": "warning",
+      "description": "No detected black interval should exceed two seconds."
+    },
+    {
+      "id": "no_watermark",
+      "type": "semantic",
+      "code": "watermark_or_overlay",
+      "operator": "defect_absent",
+      "severity": "critical",
+      "description": "No watermark or added overlay should be visible."
+    }
+  ]
+}

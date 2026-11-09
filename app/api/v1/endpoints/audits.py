@@ -18,6 +18,11 @@ def create_audit(payload: AuditCreate, db: Session = Depends(get_db)) -> AuditRe
         youtube_url=payload.youtube_url,
         video_id=payload.video_id,
         content_type=payload.content_type.value,
+        criteria_spec=(
+            payload.criteria_spec.model_dump(mode="json")
+            if payload.criteria_spec is not None
+            else None
+        ),
         status="pending",
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),

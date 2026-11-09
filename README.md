@@ -55,6 +55,10 @@ FastAPI -> PostgreSQL (pending)
           + conservative policy
                  |
                  v
+          Project Criteria Engine
+          + APPROVE / REVIEW / REJECT
+                 |
+                 v
           PostgreSQL (completed/failed)
                  |
                  v
@@ -180,6 +184,7 @@ All settings are loaded from `.env`.
 | `GEMINI_RETRY_ATTEMPTS` | `3` | SDK attempts, including the first |
 | `YT_DLP_BINARY` | `yt-dlp` | Downloader executable |
 | `VIDEO_TEMP_ROOT` | `storage/temp` | Temporary video root |
+| `VIDEO_FORMAT` | `bv+ba/b` | yt-dlp format selector; downloads the best available source rendition without a 720p ceiling |
 | `VIDEO_MAX_FILESIZE_BYTES` | `1500000000` | Maximum download size |
 | `VIDEO_DOWNLOAD_TIMEOUT_SECONDS` | `900` | Download timeout |
 | `FFPROBE_BINARY` | `ffprobe` | FFprobe executable |
@@ -223,6 +228,54 @@ python -m pytest
 ```
 
 The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. FFprobe tests mock the executable and cover metadata parsing, rational frame rates, missing audio, short-duration findings, malformed responses, and timeouts. OpenCV tests use synthetic frame metrics and a fake capture source to verify black/freeze grouping, scene-change and blur candidates, timestamp evidence previews, sampling limits, and optional-dependency behavior. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video. Calibration tests cover JSONL validation, API-response parsing, confusion matrices, false acceptance/rejection rates, and per-defect precision/recall/F1.
+
+## Project criteria and explainable decisions
+
+Each audit can optionally receive a project-specific `criteria_spec` in the create-audit request. The criteria are validated before the job is queued and stored with that audit, so different customers/projects can use different rubrics without changing Python code.
+
+Supported rule types:
+
+- `technical`: FFprobe measurements (`duration_seconds`, `file_size_bytes`, `width`, `height`, `frame_rate`, `has_audio`, `video_codec`, `format_name`, `video_bit_rate`, `container_bit_rate`, `audio_stream_count`). Operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `between`, `in`, `not_in`.
+- `visual`: sampled OpenCV signals by code, using `finding_present`, `finding_absent`, or `max_duration`.
+- `semantic`: Gemini defect categories using `defect_present` or `defect_absent`. Semantic rules become `unknown` unless Gemini reports adequate preliminary review coverage; uncertain/low-confidence matches also remain `unknown`.
+
+Rule severity is `critical`, `warning`, or `info`. A failed critical rule produces `REJECT`; other failures and any unknown result produce `REVIEW`; `APPROVE` is returned only when every configured rule passes. A missing technical or visual measurement is never silently treated as a pass. The result is stored separately as `decision`, `decision_summary`, and `criteria_results`; the original Gemini `verdict` is preserved unchanged. These are recommendations for human-supervised workflow, not a certified quality guarantee.
+
+Example project rubric: `examples/criteria/outdoor_video.json`.
+
+Example create-audit request:
+
+```json
+{
+  "youtube_url": "https://www.youtube.com/watch?v=VIDEO_ID",
+  "content_type": "live_action",
+  "criteria_spec": {
+    "name": "Outdoor people videos",
+    "version": "1.0",
+    "rules": [
+      {
+        "id": "minimum_height",
+        "type": "technical",
+        "field": "height",
+        "operator": "gte",
+        "value": 1080,
+        "severity": "critical"
+      },
+      {
+        "id": "no_watermark",
+        "type": "semantic",
+        "code": "watermark_or_overlay",
+        "operator": "defect_absent",
+        "severity": "critical"
+      }
+    ]
+  }
+}
+```
+
+Technical fields are allow-listed; arbitrary Python paths or expressions are not accepted. `between` takes a two-item `value` array, for example `[30, 180]`. Visual `max_duration` uses seconds in `value`. Semantic codes must match the existing Gemini `DefectCategory` values. If no `criteria_spec` is supplied, the project decision remains `null` and the original SFT report flow is unchanged.
+
+**Resolution note:** the default yt-dlp selector is `bv*+ba/b`, so the worker no longer caps the download at 720p before checking the source. If your existing local `.env` contains the old `VIDEO_FORMAT=bv*[height<=720]+ba/b[height<=720]/b`, update that one line to `VIDEO_FORMAT=bv*+ba/b` manually; do not overwrite your `.env` or copy over API keys.
 
 ## Expert-labelled dataset calibration
 
