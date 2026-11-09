@@ -1,3 +1,4 @@
+from datetime import datetime
 import re
 from enum import Enum
 
@@ -44,7 +45,7 @@ class UserResponse(BaseModel):
     email: str
     role: UserRole
     is_active: bool
-    created_at: object
+    created_at: datetime
 
 
 class TokenResponse(BaseModel):
