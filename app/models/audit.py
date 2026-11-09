@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import uuid
 
-from sqlalchemy import DateTime, Index, Integer, JSON, String, Text
+from sqlalchemy import DateTime, Float, Index, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -40,6 +40,10 @@ class AuditRecord(Base):
     criteria_results: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
     decision_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gemini_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    gemini_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gemini_cost_rub: Mapped[float | None] = mapped_column(Float, nullable=True)
+    processing_metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     markup_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
