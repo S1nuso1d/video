@@ -32,12 +32,22 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-В `.env` нужно указать собственный `GEMINI_API_KEY` и проверить строку подключения:
+В `.env` нужно указать собственный `GEMINI_API_KEY`, сгенерировать секрет авторизации и проверить строку подключения:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Скопируй выведенную строку в `.env`:
 
 ```dotenv
 DATABASE_URL=postgresql+psycopg://video_auditor:video_auditor_dev_password@localhost:5433/video_auditor
 GEMINI_API_KEY=твой_ключ_Gemini
+AUTH_SECRET_KEY=сгенерированный_секрет_не_короче_32_символов
+AUTH_ACCESS_TOKEN_MINUTES=30
 ```
+
+Не используй примерную строку как реальный секрет. Если меняешь `AUTH_SECRET_KEY` после создания токенов, пользователям придётся войти заново.
 
 **Если файл `.env` уже существует, не выполняй `Copy-Item` повторно:** это может заменить твои настройки. Не публикуй `.env` в GitHub.
 
@@ -50,7 +60,10 @@ cd "C:\Users\Даниил\Desktop\video_auditor_project"
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 alembic upgrade head
+python -m app.create_user admin@example.com --role admin
 ```
+
+Команда создания администратора попросит ввести и подтвердить пароль (от 12 символов). Выполняется один раз после миграций; дополнительные аккаунты создаёт администратор через API. Если администратор уже создан, повторно эту команду выполнять не нужно.
 
 Если виртуального окружения ещё нет, создай его один раз:
 
@@ -123,8 +136,19 @@ docker compose stop postgres
 ```powershell
 cd "C:\Users\Даниил\Desktop\video_auditor_project"
 git status
-git pull --ff-only origin main
+git fetch origin
+git switch --track origin/feat/auth-rbac-foundation
+git pull --ff-only
 ```
+
+Если локальная ветка уже существует:
+
+```powershell
+git switch feat/auth-rbac-foundation
+git pull --ff-only origin feat/auth-rbac-foundation
+```
+
+Эта ветка основана на `feat/gemini-cost-observability` и предназначена для проверки до слияния PR. После того как вся зависимая PR-цепочка будет объединена в `main`, для обычных обновлений можно использовать `git pull --ff-only origin main`.
 
 Если менялись зависимости, после обновления выполни `python -m pip install -r requirements.txt`. Если добавились новые миграции, выполни `alembic upgrade head`. После обновления перезапусти API и worker; вкладку интерфейса обнови в браузере.
 
