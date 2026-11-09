@@ -8,6 +8,7 @@ Video Auditor is a preliminary video quality assessment application built with *
 
 - Web interface for submitting audits, viewing audit history, inspecting reports, and handling manual reviews.
 - Human-review queue for AI/criteria cases requiring a second look, reviewer assignment/claiming, human decisions, and append-only review history.
+- Admin dashboard with period-based audit, verdict, criteria, human-review, Gemini cost/token, daily activity, and reviewer-performance analytics; CSV export and account lifecycle management.
 - Bearer-token authentication with Argon2 password hashes and admin/operator/reviewer roles. Operators can only see their own audits; reviewers and admins can inspect the shared queue.
 - REST API and interactive Swagger documentation at `/docs`.
 - PostgreSQL-backed audit queue.
@@ -180,6 +181,10 @@ Open `http://127.0.0.1:8000/` for the interface or `http://127.0.0.1:8000/docs` 
 | `POST /api/v1/reviews/{audit_id}/decision` | Submit approved/rejected/needs_changes (assigned reviewer/admin) |
 | `POST /api/v1/reviews/{audit_id}/reopen` | Reopen a completed review (admin) |
 | `GET /api/v1/reviews/{audit_id}/history` | Read append-only review history (admin/reviewer) |
+| `GET /api/v1/admin/overview` | Aggregated audit, quality, cost, and reviewer metrics (admin only) |
+| `GET /api/v1/admin/audits.csv` | Export audit-level CSV for a selected date range (admin only) |
+| `GET /api/v1/admin/users` | List application accounts (admin only) |
+| `PATCH /api/v1/admin/users/{user_id}` | Change a user role or active state (admin only) |
 | `GET /docs` | Swagger UI |
 
 The `content_type` field accepts `unknown`, `live_action`, or `animation`.
@@ -390,6 +395,18 @@ An administrator can reopen a completed review with a reason. The current human 
 Human decisions are stored in `human_review_decision`, `human_review_comment`, `human_reviewed_by_user_id`, and `human_reviewed_at`. They never overwrite Gemini's `verdict` or the criteria engine's `decision`. This preserves machine results for later calibration and auditing.
 
 Migration `20261109_0010` adds review state and history. Existing completed audits with `manual_review_required` or criteria decision `REVIEW` are backfilled into the pending queue.
+
+## Administration and quality analytics
+
+Administrators receive an overview dashboard in the web interface. The date range is interpreted in UTC and defaults to the last 30 calendar days. The overview includes audit volume and status, Gemini verdict distribution, project criteria decisions, human-review state and decisions, completion/failure rates, estimated Gemini cost, token/request totals, daily audit volume, and reviewer performance.
+
+Reviewer metrics include decisions recorded during the selected period, counts by human outcome, current open assignments, and average queue delay. Queue delay is measured from the completed AI audit timestamp to the human decision timestamp; it is not the time a reviewer actively spent working.
+
+The CSV export contains one row per audit and excludes the original YouTube URL and free-text comments. It includes the video ID, timestamps, AI/criteria/human outcomes, reviewer email, attempts, and configured Gemini cost estimates. Spreadsheet-formula prefixes are escaped in exported text cells. The export is available to administrators only.
+
+Administrators can create accounts and change another user's role or active state from the dashboard. The API prevents self-demotion/deactivation and prevents removal of the last active administrator. Disabled accounts cannot obtain new access tokens.
+
+These metrics are operational summaries, not an independently validated model-accuracy score. Precision, recall, and false-acceptance measurements still require a correctly labelled expert dataset and the calibration workflow.
 
 ## Important limitations and responsible use
 
