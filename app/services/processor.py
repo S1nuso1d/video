@@ -23,6 +23,7 @@ from app.services.video_probe import (
     VideoProbeError,
     probe_video,
 )
+from app.services.criteria_engine import evaluate_criteria
 from app.services.frame_analyzer import (
     OpenCVUnavailableError,
     VideoFrameAnalysisError,
@@ -50,6 +51,7 @@ def process_audit(audit_id: str, lease_token: str) -> None:
             return
         youtube_url = record.youtube_url
         content_type = record.content_type
+        criteria_spec = record.criteria_spec
         current_attempt = int(record.attempt_count or 0)
 
     downloaded: DownloadedVideo | None = None
@@ -161,6 +163,19 @@ def process_audit(audit_id: str, lease_token: str) -> None:
             local_video_path=downloaded.path,
         )
         report_dict = report.model_dump(mode="json")
+        criteria_results = evaluate_criteria(
+            criteria_spec,
+            technical_metadata=technical_metadata,
+            visual_metadata=visual_metadata,
+            visual_findings=visual_findings,
+            report=report_dict,
+        )
+        project_decision = (
+            criteria_results.get("decision") if criteria_results is not None else None
+        )
+        decision_summary = (
+            criteria_results.get("summary") if criteria_results is not None else None
+        )
         now = datetime.now(timezone.utc)
         with SessionLocal() as db:
             result = db.execute(
@@ -178,6 +193,9 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                         item.model_dump(mode="json") for item in report.detected_defects
                     ],
                     markup_comment=report.markup_comment,
+                    criteria_results=criteria_results,
+                    decision=project_decision,
+                    decision_summary=decision_summary,
                     status="completed",
                     error_message=None,
                     next_retry_at=None,
@@ -196,7 +214,12 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                 )
                 return
 
-        logger.info("Audit %s completed with verdict=%s", audit_id, report.verdict.value)
+        logger.info(
+            "Audit %s completed with verdict=%s project_decision=%s",
+            audit_id,
+            report.verdict.value,
+            project_decision or "not_configured",
+        )
     except Exception as exc:
         now = datetime.now(timezone.utc)
         retryable = isinstance(exc, GeminiAuditError) and exc.retryable
