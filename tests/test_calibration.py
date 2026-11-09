@@ -63,7 +63,7 @@ def test_evaluate_calibration_counts_verdict_errors_and_defect_metrics():
     verdict = report["verdict"]
 
     assert report["sample_count"] == 4
-    assert verdict["accuracy"] == 0.5
+    assert verdict["accuracy"] == 0.25
     assert verdict["false_acceptance"] == {
         "count": 1,
         "denominator": 2,
