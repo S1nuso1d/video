@@ -203,6 +203,90 @@ def _build_findings(
             }
         )
 
+    # Blur is treated as a low-confidence candidate only when several adjacent
+    # samples remain below the focus-measure threshold. Smooth graphics and
+    # shallow-depth-of-field shots can legitimately produce low scores.
+    blur_runs: list[list[FrameSample]] = []
+    current_blur_run: list[FrameSample] = []
+    for sample in samples:
+        is_blur_candidate = (
+            sample.blur_score is not None
+            and sample.blur_score <= settings.cv_blur_focus_threshold
+            and not sample.is_black_candidate
+        )
+        if not is_blur_candidate:
+            if current_blur_run:
+                blur_runs.append(current_blur_run)
+                current_blur_run = []
+            continue
+        if (
+            current_blur_run
+            and sample.timestamp_seconds - current_blur_run[-1].timestamp_seconds <= max_gap
+        ):
+            current_blur_run.append(sample)
+        else:
+            if current_blur_run:
+                blur_runs.append(current_blur_run)
+            current_blur_run = [sample]
+    if current_blur_run:
+        blur_runs.append(current_blur_run)
+
+    for run in blur_runs:
+        start = run[0].timestamp_seconds
+        end = run[-1].timestamp_seconds + interval
+        if duration_seconds is not None and duration_seconds > 0:
+            end = min(end, duration_seconds)
+        duration = max(0.0, end - start)
+        if duration < settings.cv_blur_min_duration_seconds:
+            continue
+        scores = [item.blur_score for item in run if item.blur_score is not None]
+        findings.append(
+            {
+                "code": "blur_suspected",
+                "severity": "warning",
+                "source": "opencv",
+                "confidence": "low",
+                "description": (
+                    "The sampled frames have a low Laplacian-variance focus measure. "
+                    "Smooth scenes, graphics, or intentional focus effects may produce "
+                    "the same signal; inspect the evidence frames."
+                ),
+                "evidence": {
+                    "start_time_seconds": round(start, 3),
+                    "end_time_seconds": round(end, 3),
+                    "estimated_duration_seconds": round(duration, 3),
+                    "sample_count": len(run),
+                    "mean_focus_measure": round(sum(scores) / len(scores), 3),
+                    "focus_measure_threshold": settings.cv_blur_focus_threshold,
+                },
+            }
+        )
+
+    # A large distribution/pixel change between adjacent samples is a possible
+    # scene transition. Sampling cannot guarantee that every cut is observed.
+    for previous, current in zip(samples, samples[1:]):
+        score = current.scene_change_score
+        if score is None or score < settings.cv_scene_change_threshold:
+            continue
+        findings.append(
+            {
+                "code": "scene_change_suspected",
+                "severity": "observation",
+                "source": "opencv",
+                "confidence": "low",
+                "description": (
+                    "A strong visual change was measured between adjacent sampled "
+                    "frames. This may be an edit, camera movement, or a rapid change "
+                    "inside the same scene."
+                ),
+                "evidence": {
+                    "start_time_seconds": round(previous.timestamp_seconds, 3),
+                    "end_time_seconds": round(current.timestamp_seconds, 3),
+                    "scene_change_score": round(score, 4),
+                },
+            }
+        )
+
     findings.sort(
         key=lambda finding: finding.get("evidence", {}).get("start_time_seconds", 0)
     )
