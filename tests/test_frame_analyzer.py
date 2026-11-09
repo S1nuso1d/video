@@ -201,10 +201,14 @@ def test_analyze_video_frames_samples_with_a_bounded_timeline(tmp_path, monkeypa
     monkeypatch.setattr(frame_analyzer.settings, "cv_resize_width", 320)
     monkeypatch.setattr(frame_analyzer.settings, "cv_black_min_duration_seconds", 0.5)
     monkeypatch.setattr(frame_analyzer.settings, "cv_freeze_min_duration_seconds", 2.5)
+    monkeypatch.setattr(frame_analyzer.settings, "cv_blur_min_duration_seconds", 2.0)
+    monkeypatch.setattr(frame_analyzer.settings, "cv_evidence_max_frames", 4)
+    monkeypatch.setattr(frame_analyzer.settings, "cv_evidence_width", 160)
 
     result = frame_analyzer.analyze_video_frames(path, duration_seconds=2.0)
 
     assert result.metadata["sampled_frames"] == 4
+    assert result.metadata["evidence_frames"] > 0
     assert result.metadata["source_fps"] == 2.0
     assert result.metadata["analysis_resolution_width"] == 8
     assert any(item["code"] == "black_frame_segment" for item in result.findings)
