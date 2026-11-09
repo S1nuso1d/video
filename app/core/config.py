@@ -13,6 +13,11 @@ class Settings(BaseSettings):
         "localhost:5433/video_auditor"
     )
     gemini_api_key: str = ""
+    # Authentication is disabled until a strong secret is configured.
+    # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    auth_secret_key: str = ""
+    auth_access_token_minutes: int = 30
+    auth_token_issuer: str = "video-auditor"
     gemini_model: str = "gemini-3.8-flash"
     # Google Gen AI SDK timeout is specified in milliseconds.
     gemini_timeout_ms: int = 180000
