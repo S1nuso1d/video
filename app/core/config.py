@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     video_max_filesize_bytes: int = 1_500_000_000
     video_download_timeout_seconds: int = 900
 
+    # Deterministic metadata extraction. Missing FFprobe is non-fatal by default
+    # so existing local setups can continue to use Gemini while FFmpeg is installed.
+    ffprobe_binary: str = "ffprobe"
+    ffprobe_timeout_seconds: int = 30
+    ffprobe_required: bool = False
+
     # Worker-level retries happen only after the SDK's bounded retries are exhausted.
     audit_max_attempts: int = 2
     audit_retry_delay_seconds: int = 30
@@ -53,6 +59,8 @@ class Settings(BaseSettings):
             )
         if self.worker_recovery_interval_seconds < 1:
             raise ValueError("WORKER_RECOVERY_INTERVAL_SECONDS must be at least 1")
+        if self.ffprobe_timeout_seconds < 1:
+            raise ValueError("FFPROBE_TIMEOUT_SECONDS must be at least 1")
         return self
 
     model_config = SettingsConfigDict(
