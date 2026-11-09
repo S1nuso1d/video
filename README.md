@@ -7,6 +7,7 @@ Video Auditor is a preliminary video quality assessment application built with *
 ## Current capabilities
 
 - Web interface for submitting audits, viewing audit history, and inspecting reports.
+- Bearer-token authentication with Argon2 password hashes and admin/operator/reviewer roles. Operators can only see their own audits; reviewers and admins can inspect the shared queue.
 - REST API and interactive Swagger documentation at `/docs`.
 - PostgreSQL-backed audit queue.
 - Separate worker process; long-running downloads and AI requests do not run inside the HTTP request.
@@ -106,7 +107,13 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Set `GEMINI_API_KEY`. Never commit `.env` or share the API key.
+Set `GEMINI_API_KEY` and generate a unique authentication secret:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Copy the generated value into `AUTH_SECRET_KEY` in `.env`. Keep both API keys and authentication secrets private; never commit `.env`. Authenticated API endpoints will not issue tokens unless `AUTH_SECRET_KEY` contains at least 32 characters.
 
 3. Install FFmpeg on Windows and make sure `ffprobe.exe` is available in PATH. Verify with `ffmpeg -version` and `ffprobe -version`. If FFprobe is unavailable, processing can continue without metadata while `FFPROBE_REQUIRED=false`.
 
@@ -144,16 +151,27 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 .\.venv\Scripts\python.exe -m app.worker
 ```
 
+Create the first administrator in a third PowerShell window (the command prompts for the password twice and stores only its Argon2 hash):
+
+```powershell
+.\\.venv\\Scripts\\python.exe -m app.create_user admin@example.com --role admin
+```
+
+An administrator can create additional accounts through `POST /api/v1/auth/users`. There is no public self-registration. Sign in at `http://127.0.0.1:8000/` with the account you created, or use `POST /api/v1/auth/token` to obtain a bearer token.
+
 Open `http://127.0.0.1:8000/` for the interface or `http://127.0.0.1:8000/docs` for API documentation.
 
 ## API endpoints
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /health` | API health check |
-| `POST /api/v1/audits` | Create an audit |
-| `GET /api/v1/audits` | List audits |
-| `GET /api/v1/audits/{audit_id}` | Get an audit and its report |
+| `GET /health` | API health check (public) |
+| `POST /api/v1/auth/token` | Exchange email/password for a short-lived bearer token |
+| `GET /api/v1/auth/me` | Get the current account |
+| `POST /api/v1/auth/users` | Create an account (admin only) |
+| `POST /api/v1/audits` | Create an audit (admin/operator) |
+| `GET /api/v1/audits` | List permitted audits (admin/reviewer: all; operator: own) |
+| `GET /api/v1/audits/{audit_id}` | Get an audit if the current role permits access |
 | `GET /docs` | Swagger UI |
 
 The `content_type` field accepts `unknown`, `live_action`, or `animation`.
@@ -170,6 +188,20 @@ Report verdicts:
 - `candidate_accepted` — provisionally suitable;
 - `candidate_rejected` — provisionally unsuitable;
 - `manual_review_required` — the evidence is insufficient or ambiguous.
+
+## Accounts and access control
+
+The application has three roles:
+
+- `admin`: can create users, submit audits, and inspect all audits;
+- `operator`: can submit audits and inspect only audits created by that account;
+- `reviewer`: can inspect all audits but cannot submit new jobs.
+
+There is no public registration or default account. Create the first administrator locally with `python -m app.create_user admin@example.com --role admin`; the command asks for a 12–128 character password interactively and stores an Argon2 hash. An administrator can provision further accounts through `POST /api/v1/auth/users`. Passwords are never returned by the API.
+
+Tokens are signed with HS256, expire after `AUTH_ACCESS_TOKEN_MINUTES` (30 minutes by default), and are sent as `Authorization: Bearer <token>`. The browser stores the token in session storage and clears it on logout or an expired/invalid session. Use HTTPS in any non-local deployment, keep `AUTH_SECRET_KEY` secret, and add edge/API rate limiting before exposing login to the public internet.
+
+Legacy audit rows created before account support have no owner. They remain visible to admins and reviewers; operators do not receive access to unowned legacy rows. The account system is a single-workspace RBAC foundation, not yet tenant isolation or a full reviewer adjudication workflow.
 
 ## Configuration
 
