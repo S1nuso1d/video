@@ -293,6 +293,117 @@ def _build_findings(
     return findings
 
 
+def _select_evidence_samples(
+    findings: list[dict[str, Any]],
+    samples: list[FrameSample],
+    max_frames: int,
+) -> list[tuple[dict[str, Any], list[FrameSample]]]:
+    """Select representative sampled frames without retaining full frames in memory."""
+    selected: list[tuple[dict[str, Any], list[FrameSample]]] = []
+    used_indices: set[int] = set()
+    frame_budget = max(0, int(max_frames))
+
+    for finding in findings:
+        if frame_budget <= 0:
+            break
+        evidence = finding.get("evidence", {})
+        code = finding.get("code")
+        if code == "freeze_frame_suspected":
+            targets = [
+                evidence.get("start_time_seconds"),
+                evidence.get("end_time_seconds"),
+            ]
+        elif code == "scene_change_suspected":
+            targets = [evidence.get("end_time_seconds")]
+        else:
+            start = evidence.get("start_time_seconds")
+            end = evidence.get("end_time_seconds")
+            targets = [
+                (float(start) + float(end)) / 2
+                if isinstance(start, (int, float)) and isinstance(end, (int, float))
+                else start
+            ]
+
+        chosen: list[FrameSample] = []
+        for target in targets:
+            if not isinstance(target, (int, float)):
+                continue
+            candidates = [
+                sample for sample in samples
+                if sample.frame_index >= 0 and sample.frame_index not in used_indices
+            ]
+            if not candidates:
+                break
+            closest = min(
+                candidates,
+                key=lambda sample: abs(sample.timestamp_seconds - float(target)),
+            )
+            used_indices.add(closest.frame_index)
+            chosen.append(closest)
+            frame_budget -= 1
+            if frame_budget <= 0:
+                break
+        if chosen:
+            selected.append((finding, chosen))
+    return selected
+
+
+def _attach_evidence_frames(
+    findings: list[dict[str, Any]],
+    samples: list[FrameSample],
+    capture: Any,
+) -> int:
+    """Re-read only selected frames and persist tiny JPEG previews as base64."""
+    selected = _select_evidence_samples(
+        findings,
+        samples,
+        settings.cv_evidence_max_frames,
+    )
+    attached = 0
+    for finding, chosen_samples in selected:
+        encoded_frames: list[dict[str, Any]] = []
+        for sample in chosen_samples:
+            if not capture.set(cv2.CAP_PROP_POS_FRAMES, float(sample.frame_index)):
+                continue
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                continue
+            height, width = frame.shape[:2]
+            target_width = max(64, int(settings.cv_evidence_width))
+            if width > target_width:
+                target_height = max(1, int(round(height * target_width / width)))
+                frame = cv2.resize(
+                    frame,
+                    (target_width, target_height),
+                    interpolation=cv2.INTER_AREA,
+                )
+            success, encoded = cv2.imencode(
+                ".jpg",
+                frame,
+                [cv2.IMWRITE_JPEG_QUALITY, int(settings.cv_evidence_jpeg_quality)],
+            )
+            if not success:
+                continue
+            image_bytes = encoded.tobytes()
+            if len(image_bytes) > settings.cv_evidence_max_bytes_per_frame:
+                logger.debug(
+                    "Skipping oversized OpenCV evidence frame at %.3fs",
+                    sample.timestamp_seconds,
+                )
+                continue
+            encoded_frames.append(
+                {
+                    "timestamp_seconds": round(sample.timestamp_seconds, 3),
+                    "mime_type": "image/jpeg",
+                    "data_base64": base64.b64encode(image_bytes).decode("ascii"),
+                }
+            )
+            attached += 1
+        if encoded_frames:
+            finding.setdefault("evidence", {})["frames"] = encoded_frames
+    return attached
+
+
 def analyze_video_frames(
     path: Path,
     duration_seconds: float | None = None,
