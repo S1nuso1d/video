@@ -136,7 +136,7 @@ function appendVisualEvidence(parent,a){
 function addList(parent,title,items){if(!Array.isArray(items)||!items.length)return;parent.append(node("div","section-title",title));const ul=node("ul","plain-list");items.forEach(x=>ul.append(node("li","",x)));parent.append(ul)}
 function renderResult(a){
 result.replaceChildren();subtitle.textContent="ID: "+a.id;const head=node("div","result-head"),about=node("div");about.append(node("h3","",a.video_id?"Видео "+a.video_id:"Аудит видео"));const link=node("a","result-url",a.youtube_url||"");link.href=a.youtube_url||"#";link.target="_blank";link.rel="noreferrer";about.append(link);const status=node("div");status.append(statusPill(a.status));if(a.status==="completed"&&a.verdict){status.append(document.createTextNode(" "));status.append(verdictPill(a.verdict))}head.append(about,status);result.append(head);
-appendTechnicalEvidence(result,a);
+appendTechnicalEvidence(result,a);appendVisualEvidence(result,a);
 if(a.status==="pending"||a.status==="processing"){const box=node("div","comment"),line=node("div","loading");line.append(node("span","spinner"),document.createTextNode(a.status==="pending"?"Задание в очереди. Ожидаем worker…":"Модель анализирует видео. Это может занять несколько минут…"));box.append(line,node("div","comment-text","Статус обновится автоматически. Не отправляй ту же ссылку повторно."));result.append(box);return}
 if(a.status==="failed"){result.append(node("div","message show error",a.error_message||"Аудит завершился с ошибкой. Проверь журнал worker."));return}
 const r=a.report||{},summary=r.summary||a.summary;if(summary)result.append(node("p","summary",summary));
