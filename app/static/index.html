@@ -72,7 +72,7 @@ const decisionText={APPROVE:"Критерии выполнены",REVIEW:"Нуж
 function decisionPill(v){return node("span","pill "+({APPROVE:"approve",REVIEW:"review",REJECT:"reject"}[v]||"manual"),decisionText[v]||v||"Решение не задано")}
 function errText(e){return e instanceof TypeError?"Нет связи с API. Проверь, что FastAPI запущен.":(e.message||"Неизвестная ошибка")}
 function showLogin(note){
- stop();$("authPanel").hidden=false;$("appLayout").hidden=true;$("sessionInfo").hidden=true;
+ stop();currentUser=null;$("authPanel").hidden=false;$("appLayout").hidden=true;$("sessionInfo").hidden=true;
  if(note){$("loginMessage").textContent=note;$("loginMessage").className="message show error"}
 }
 function showWorkspace(user){
