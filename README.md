@@ -222,7 +222,52 @@ Run the automated tests from the active virtual environment:
 python -m pytest
 ```
 
-The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. FFprobe tests mock the executable and cover metadata parsing, rational frame rates, missing audio, short-duration findings, malformed responses, and timeouts. OpenCV tests use synthetic frame metrics and a fake capture source to verify black/freeze grouping, scene-change and blur candidates, timestamp evidence previews, sampling limits, and optional-dependency behavior. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video.
+The unit tests use SQLite for worker lease lifecycle checks and mocks for external services. FFprobe tests mock the executable and cover metadata parsing, rational frame rates, missing audio, short-duration findings, malformed responses, and timeouts. OpenCV tests use synthetic frame metrics and a fake capture source to verify black/freeze grouping, scene-change and blur candidates, timestamp evidence previews, sampling limits, and optional-dependency behavior. They do not prove that Gemini or YouTube access is currently available; perform a separate end-to-end test with an authorized public video. Calibration tests cover JSONL validation, API-response parsing, confusion matrices, false acceptance/rejection rates, and per-defect precision/recall/F1.
+
+## Expert-labelled dataset calibration
+
+The offline calibration tool compares audit results with expert labels. It does not change the production verdict and does not train or fine-tune Gemini/OpenCV.
+
+Prepare a UTF-8 JSONL file with one sample per line. Keep only the audit fields needed for evaluation; source videos, URLs, personal data, and base64 image evidence are not needed.
+
+Example record:
+
+```json
+{
+  "sample_id": "sample-001",
+  "expert": {
+    "verdict": "candidate_rejected",
+    "defects": ["black_frame_segment", "video_under_5_seconds"]
+  },
+  "prediction": {
+    "id": "audit-uuid",
+    "report": {
+      "verdict": "candidate_rejected",
+      "detected_defects": [
+        {"category": "video_under_5_seconds"}
+      ]
+    },
+    "technical_findings": [
+      {"code": "video_under_5_seconds"}
+    ],
+    "visual_findings": [
+      {"code": "black_frame_segment"}
+    ]
+  }
+}
+```
+
+Allowed verdicts are `candidate_accepted`, `candidate_rejected`, and `manual_review_required`. Defect labels are compared literally: use the same code in `expert.defects` that appears in the prediction's `category` or `code` field. The evaluator reads AI defects from `report.detected_defects` (or top-level `detected_defects`), FFprobe findings from `technical_findings`, and OpenCV findings from `visual_findings`.
+
+Run the included synthetic example:
+
+```powershell
+python -m app.calibration_cli --input examples/calibration/example.jsonl --output reports/calibration.json --markdown reports/calibration.md
+```
+
+Use your own expert-labelled JSONL file with the same command and replace the input path. The tool reports a three-class verdict confusion matrix, accuracy, balanced accuracy, decision coverage, manual-review share, false-acceptance rate, false-rejection rate, and per-defect precision/recall/F1. Undefined precision or recall is shown as `n/a`; it is not silently treated as a perfect score.
+
+**Important:** the example dataset contains synthetic records only. For meaningful results, experts must label samples independently using one agreed rubric, include both accepted and rejected videos, and resolve disagreements before calculating metrics. A manual-review prediction is counted as neither a false acceptance nor a false rejection. This first evaluator uses exact code matching; any taxonomy mapping must be explicit and reviewed rather than guessed.
 
 ## Important limitations and responsible use
 
