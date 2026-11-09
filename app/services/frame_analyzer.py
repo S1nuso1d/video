@@ -57,6 +57,7 @@ class FrameSample:
 def _build_findings(
     samples: list[FrameSample],
     sample_interval_seconds: float,
+    duration_seconds: float | None = None,
 ) -> list[dict[str, Any]]:
     """Convert sampled metrics into timestamped, deliberately conservative signals."""
     if not samples:
