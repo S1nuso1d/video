@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     gemini_youtube_direct: bool = True
     # Optional shared team key. Keep empty for private local development.
     workspace_access_key: str = ""
+    # Explicit browser origins allowed to call the API from an existing portal.
+    cors_allowed_origins: list[str] = []
     gemini_model: str = "gemini-3.8-flash"
     # Google Gen AI SDK timeout is specified in milliseconds.
     gemini_timeout_ms: int = 180000
