@@ -61,3 +61,6 @@ jobs:
 
       - name: Run test suite
         run: python -m pytest -q
+
+      - name: Validate browser JavaScript syntax
+        run: python scripts/check_frontend.py
