@@ -45,6 +45,12 @@ def main() -> int:
         record.gemini_cost_rub = None
         record.processing_metrics = None
         record.markup_comment = None
+        record.review_status = "not_required"
+        record.reviewer_user_id = None
+        record.human_review_decision = None
+        record.human_review_comment = None
+        record.human_reviewed_by_user_id = None
+        record.human_reviewed_at = None
         record.error_message = None
         record.started_at = None
         record.completed_at = None

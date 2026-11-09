@@ -6,7 +6,8 @@ Video Auditor is a preliminary video quality assessment application built with *
 
 ## Current capabilities
 
-- Web interface for submitting audits, viewing audit history, and inspecting reports.
+- Web interface for submitting audits, viewing audit history, inspecting reports, and handling manual reviews.
+- Human-review queue for AI/criteria cases requiring a second look, reviewer assignment/claiming, human decisions, and append-only review history.
 - Bearer-token authentication with Argon2 password hashes and admin/operator/reviewer roles. Operators can only see their own audits; reviewers and admins can inspect the shared queue.
 - REST API and interactive Swagger documentation at `/docs`.
 - PostgreSQL-backed audit queue.
@@ -168,10 +169,17 @@ Open `http://127.0.0.1:8000/` for the interface or `http://127.0.0.1:8000/docs` 
 | `GET /health` | API health check (public) |
 | `POST /api/v1/auth/token` | Exchange email/password for a short-lived bearer token |
 | `GET /api/v1/auth/me` | Get the current account |
+| `GET /api/v1/auth/reviewers` | List active reviewers (admin only) |
 | `POST /api/v1/auth/users` | Create an account (admin only) |
 | `POST /api/v1/audits` | Create an audit (admin/operator) |
 | `GET /api/v1/audits` | List permitted audits (admin/reviewer: all; operator: own) |
 | `GET /api/v1/audits/{audit_id}` | Get an audit if the current role permits access |
+| `GET /api/v1/reviews/queue` | List open manual-review cases (admin/reviewer) |
+| `POST /api/v1/reviews/{audit_id}/claim` | Claim an unassigned review (reviewer) |
+| `PUT /api/v1/reviews/{audit_id}/assignment` | Assign/unassign a reviewer (admin) |
+| `POST /api/v1/reviews/{audit_id}/decision` | Submit approved/rejected/needs_changes (assigned reviewer/admin) |
+| `POST /api/v1/reviews/{audit_id}/reopen` | Reopen a completed review (admin) |
+| `GET /api/v1/reviews/{audit_id}/history` | Read append-only review history (admin/reviewer) |
 | `GET /docs` | Swagger UI |
 
 The `content_type` field accepts `unknown`, `live_action`, or `animation`.
@@ -201,7 +209,7 @@ There is no public registration or default account. Create the first administrat
 
 Tokens are signed with HS256, expire after `AUTH_ACCESS_TOKEN_MINUTES` (30 minutes by default), and are sent as `Authorization: Bearer <token>`. The browser stores the token in session storage and clears it on logout or an expired/invalid session. Use HTTPS in any non-local deployment, keep `AUTH_SECRET_KEY` secret, and add edge/API rate limiting before exposing login to the public internet.
 
-Legacy audit rows created before account support have no owner. They remain visible to admins and reviewers; operators do not receive access to unowned legacy rows. The account system is a single-workspace RBAC foundation, not yet tenant isolation or a full reviewer adjudication workflow.
+Legacy audit rows created before account support have no owner. They remain visible to admins and reviewers; operators do not receive access to unowned legacy rows. The account system is a single-workspace RBAC foundation, not yet tenant isolation or a multi-tenant workspace.
 
 ## Configuration
 
@@ -368,6 +376,20 @@ python -m app.calibration_cli --input examples/calibration/example.jsonl --outpu
 Use your own expert-labelled JSONL file with the same command and replace the input path. The tool reports a three-class verdict confusion matrix, accuracy, balanced accuracy, decision coverage, manual-review share, false-acceptance rate, false-rejection rate, and per-defect precision/recall/F1. Undefined precision or recall is shown as `n/a`; it is not silently treated as a perfect score.
 
 **Important:** the example dataset contains synthetic records only. For meaningful results, experts must label samples independently using one agreed rubric, include both accepted and rejected videos, and resolve disagreements before calculating metrics. A manual-review prediction is counted as neither a false acceptance nor a false rejection. This first evaluator uses exact code matching; any taxonomy mapping must be explicit and reviewed rather than guessed.
+
+## Human review workflow
+
+A completed audit is automatically added to the human-review queue when the Gemini report verdict is `manual_review_required` or the project criteria engine returns `REVIEW`. The worker does not replace or reinterpret either machine result.
+
+Review states are stored separately: `pending` (waiting to be claimed), `assigned` (assigned to a reviewer), `completed` (a human decision was recorded), and `not_required` (no manual action is currently required).
+
+Admins can assign an active reviewer with `PUT /api/v1/reviews/{audit_id}/assignment`. Reviewers can claim an unassigned case with `POST /api/v1/reviews/{audit_id}/claim`. Only the assigned reviewer or an administrator can submit a decision. Supported decisions are `approved`, `rejected`, and `needs_changes`; rejection and change requests require a reason of at least ten characters.
+
+An administrator can reopen a completed review with a reason. The current human decision is cleared from the audit's current state, while the original action remains in the append-only history. The history records automatic queueing, assignment/claim, decisions, and reopen operations. No update/delete API is exposed for history events.
+
+Human decisions are stored in `human_review_decision`, `human_review_comment`, `human_reviewed_by_user_id`, and `human_reviewed_at`. They never overwrite Gemini's `verdict` or the criteria engine's `decision`. This preserves machine results for later calibration and auditing.
+
+Migration `20261109_0010` adds review state and history. Existing completed audits with `manual_review_required` or criteria decision `REVIEW` are backfilled into the pending queue.
 
 ## Important limitations and responsible use
 

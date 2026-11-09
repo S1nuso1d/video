@@ -8,6 +8,7 @@ from sqlalchemy import case, select, update
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.audit import AuditRecord
+from app.models.review import HumanReviewEvent
 from app.services.gemini_auditor import (
     GeminiAuditError,
     GeminiAuditResult,
@@ -226,6 +227,12 @@ def process_audit(audit_id: str, lease_token: str) -> None:
         decision_summary = (
             criteria_results.get("summary") if criteria_results is not None else None
         )
+        review_reasons = []
+        if report.verdict.value == "manual_review_required":
+            review_reasons.append("AI verdict requires manual review")
+        if project_decision == "REVIEW":
+            review_reasons.append("project criteria decision is REVIEW")
+        review_required = bool(review_reasons)
         usage_attempt = build_usage_attempt(
             attempt_usage,
             request_made=request_made,
@@ -276,6 +283,12 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                         else None
                     ),
                     processing_metrics=processing_metrics,
+                    review_status="pending" if review_required else "not_required",
+                    reviewer_user_id=None,
+                    human_review_decision=None,
+                    human_review_comment=None,
+                    human_reviewed_by_user_id=None,
+                    human_reviewed_at=None,
                     status="completed",
                     error_message=None,
                     next_retry_at=None,
@@ -286,6 +299,18 @@ def process_audit(audit_id: str, lease_token: str) -> None:
                     updated_at=now,
                 )
             )
+            if result.rowcount == 1 and review_required:
+                db.add(
+                    HumanReviewEvent(
+                        audit_id=audit_id,
+                        actor_user_id=None,
+                        action="queued",
+                        from_status="not_required",
+                        to_status="pending",
+                        comment="; ".join(review_reasons),
+                        created_at=now,
+                    )
+                )
             db.commit()
             if result.rowcount != 1:
                 logger.warning(
