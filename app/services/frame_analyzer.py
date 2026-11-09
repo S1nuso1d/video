@@ -270,6 +270,7 @@ def analyze_video_frames(
         resize_width = max(64, int(settings.cv_resize_width))
         samples: list[FrameSample] = []
         previous_gray = None
+        analysis_started_at = time.monotonic()
         original_width = None
         original_height = None
 
