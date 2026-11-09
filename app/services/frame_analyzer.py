@@ -48,6 +48,9 @@ class FrameSample:
     dark_pixel_ratio: float
     motion_mean_difference: float | None = None
     motion_changed_pixel_ratio: float | None = None
+    frame_index: int = -1
+    blur_score: float | None = None
+    scene_change_score: float | None = None
 
     @property
     def is_black_candidate(self) -> bool:
