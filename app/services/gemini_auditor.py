@@ -1,4 +1,5 @@
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +101,28 @@ def _make_client() -> genai.Client:
     )
 
 
+def _wait_for_uploaded_file(client: genai.Client, uploaded_file):
+    """Wait until Gemini finishes processing an uploaded video."""
+    deadline = time.monotonic() + settings.gemini_max_wait_seconds
+    current = uploaded_file
+    while True:
+        state = getattr(current, "state", None)
+        state_name = str(getattr(state, "name", state or "")).upper()
+
+        if not state_name or state_name == "ACTIVE":
+            return current
+        if state_name in {"FAILED", "ERROR"}:
+            raise GeminiAuditError("Gemini не смог обработать загруженный видеофайл.")
+        if time.monotonic() >= deadline:
+            raise GeminiAuditError(
+                "Gemini слишком долго обрабатывает загруженный видеофайл.",
+                retryable=True,
+            )
+
+        time.sleep(max(0.25, settings.gemini_poll_seconds))
+        current = client.files.get(name=current.name)
+
+
 def analyze_youtube_video(
     youtube_url: str,
     content_type: str,
@@ -108,8 +131,8 @@ def analyze_youtube_video(
 ) -> AuditReport:
     """Inspect a video and return a validated SFT report.
 
-    When a local download is available it is uploaded to Gemini for the audit.
-    The temporary Gemini file is deleted immediately after the response is read.
+    A local video is uploaded to Gemini, waited until ready, analyzed, and then
+    deleted from Gemini. The caller owns deletion of the local temporary file.
     """
     if not settings.gemini_api_key.strip():
         raise GeminiConfigurationError(
@@ -121,6 +144,7 @@ def analyze_youtube_video(
     try:
         if local_video_path is not None:
             uploaded_file = client.files.upload(file=local_video_path)
+            uploaded_file = _wait_for_uploaded_file(client, uploaded_file)
             video_input = {"type": "video", "uri": uploaded_file.uri}
         else:
             video_input = {"type": "video", "uri": youtube_url}
