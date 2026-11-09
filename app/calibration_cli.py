@@ -54,8 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         report = evaluate_calibration(samples)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2) + "
-",
+            json.dumps(report, ensure_ascii=False, indent=2) + chr(10),
             encoding="utf-8",
         )
         markdown = calibration_report_markdown(report)
