@@ -62,8 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             args.markdown.parent.mkdir(parents=True, exist_ok=True)
             args.markdown.write_text(markdown, encoding="utf-8")
         print(markdown)
-        print(f"
-JSON report saved to: {args.output}")
+        print(chr(10) + f"JSON report saved to: {args.output}")
         if args.markdown:
             print(f"Markdown report saved to: {args.markdown}")
         return 0
