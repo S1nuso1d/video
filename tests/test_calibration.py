@@ -75,7 +75,6 @@ def test_evaluate_calibration_counts_verdict_errors_and_defect_metrics():
     }
     assert verdict["manual_review_count"] == 1
     assert verdict["decision_coverage"] == 0.75
-    assert report["defects"]["per_label"]["black_frame_segment"]["false_negative"] if False else True
     assert report["defects"]["per_label"]["black_frame_segment"]["false_negative"] == 1
     assert report["defects"]["per_label"]["blur_suspected"]["false_positive"] == 1
 
