@@ -16,7 +16,7 @@ from app.services.cancellation import AuditCancelled, check_audit_cancellation
 
 @pytest.fixture()
 def cancellation_client(monkeypatch) -> Generator[tuple[TestClient, sessionmaker], None, None]:
-    monkeypatch.setattr(settings, "workspace_access_key", "shared-team-secret")
+    monkeypatch.setattr(settings, "workspace_access_key", "shared-workspace-key-for-tests-with-at-least-32-characters")
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -41,7 +41,7 @@ def cancellation_client(monkeypatch) -> Generator[tuple[TestClient, sessionmaker
     engine.dispose()
 
 
-def _headers(key: str = "shared-team-secret") -> dict[str, str]:
+def _headers(key: str = "shared-workspace-key-for-tests-with-at-least-32-characters") -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
@@ -118,7 +118,7 @@ def test_all_team_members_see_the_same_audit_history(cancellation_client):
     audit_id = _add_audit(factory, "completed")
 
     response = client.get("/api/v1/audits", headers=_headers())
-    detail = client.get(f"/api/v1/audits/{audit_id}", headers=_headers("shared-team-secret"))
+    detail = client.get(f"/api/v1/audits/{audit_id}", headers=_headers("shared-workspace-key-for-tests-with-at-least-32-characters"))
 
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [audit_id]
