@@ -248,8 +248,8 @@ All settings are loaded from `.env`.
 | `FFPROBE_TIMEOUT_SECONDS` | `30` | Metadata extraction timeout |
 | `FFPROBE_REQUIRED` | `false` | Fail the audit if FFprobe is unavailable |
 | `CV_ANALYSIS_REQUIRED` | `false` | Fail the audit if OpenCV frame analysis cannot run |
-| `CV_SAMPLE_INTERVAL_SECONDS` | `1.0` | Target interval between sampled frames |
-| `CV_MAX_SAMPLES` | `600` | Maximum number of frames sampled per video |
+| `CV_SAMPLE_INTERVAL_SECONDS` | `0.5` | Target interval between sampled frames |
+| `CV_MAX_SAMPLES` | `1200` | Maximum number of frames sampled per video |
 | `CV_ANALYSIS_TIMEOUT_SECONDS` | `120` | Time budget for the OpenCV sampling stage |
 | `CV_RESIZE_WIDTH` | `320` | Maximum width used for analysis frames |
 | `CV_BLACK_LUMA_THRESHOLD` | `16` | Grayscale threshold for dark pixels (0–255) |
@@ -346,7 +346,7 @@ The API response exposes `gemini_usage`, `gemini_cost_usd`, `gemini_cost_rub`, `
 
 `GEMINI_YOUTUBE_DIRECT=true` uses Google’s documented YouTube URL input for Gemini Interactions and avoids uploading the same video again through the Gemini Files API. The source must be accessible to Google as a public YouTube video; this input method is currently documented as a preview feature. Set `GEMINI_YOUTUBE_DIRECT=false` to use the local downloaded file via Gemini Files instead. See the [official Gemini video understanding guide](https://ai.google.dev/gemini-api/docs/video-understanding).
 
-OpenCV defaults to at most 600 samples with a target interval of one second. It decodes frames sequentially rather than seeking independently for every sample, reducing repeated decoding on long inter-frame-compressed videos. The source download is still kept at the best available original quality because resolution and bitrate can be project criteria; it is not silently capped at 720p. These changes improve expected processing efficiency but do not guarantee a fixed wall-clock time: YouTube download speed and Gemini upload/preparation/inference remain external bottlenecks. For local deployments with an existing `.env`, update `CV_SAMPLE_INTERVAL_SECONDS=1.0` and `CV_MAX_SAMPLES=600` manually; `.env` overrides the code defaults.
+OpenCV retains its 0.5-second target interval and 1,200-sample cap. It decodes frames sequentially rather than seeking independently for every sample, reducing repeated decoding on long inter-frame-compressed videos without reducing the configured sampling density. The source download is still kept at the best available original quality because resolution and bitrate can be project criteria; it is not silently capped at 720p. These changes improve expected processing efficiency but do not guarantee a fixed wall-clock time: YouTube download speed and Gemini inference remain external bottlenecks.
 
 ## Expert-labelled dataset calibration
 
