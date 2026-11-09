@@ -1,5 +1,6 @@
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from app.services.gemini_costs import normalise_interaction_usage
 logger = logging.getLogger(__name__)
 
 RETRYABLE_HTTP_STATUS_CODES = (408, 429, 500, 502, 503, 504)
+CancellationCheck = Callable[[], None]
 
 
 class GeminiConfigurationError(RuntimeError):
@@ -47,6 +49,11 @@ class GeminiAuditError(RuntimeError):
         self.status_code = status_code
         self.usage = usage
         self.request_made = request_made
+
+
+def _check_cancelled(cancel_check: CancellationCheck | None) -> None:
+    if cancel_check is not None:
+        cancel_check()
 
 
 def _status_code(exc: Exception) -> int | None:
@@ -115,11 +122,17 @@ def _make_client() -> genai.Client:
     )
 
 
-def _wait_for_uploaded_file(client: genai.Client, uploaded_file):
-    """Wait until Gemini finishes processing an uploaded video."""
+def _wait_for_uploaded_file(
+    client: genai.Client,
+    uploaded_file,
+    *,
+    cancel_check: CancellationCheck | None = None,
+):
+    """Wait until Gemini finishes processing an uploaded video, observing cancellation."""
     deadline = time.monotonic() + settings.gemini_max_wait_seconds
     current = uploaded_file
     while True:
+        _check_cancelled(cancel_check)
         state = getattr(current, "state", None)
         state_name = str(getattr(state, "name", state or "")).upper()
 
@@ -134,6 +147,7 @@ def _wait_for_uploaded_file(client: genai.Client, uploaded_file):
             )
 
         time.sleep(max(0.25, settings.gemini_poll_seconds))
+        _check_cancelled(cancel_check)
         current = client.files.get(name=current.name)
 
 
@@ -142,12 +156,16 @@ def analyze_youtube_video(
     content_type: str,
     *,
     local_video_path: Path | None = None,
-) -> AuditReport:
+    cancel_check: CancellationCheck | None = None,
+) -> GeminiAuditResult:
     """Inspect a video and return a validated SFT report.
 
-    A local video is uploaded to Gemini, waited until ready, analyzed, and then
-    deleted from Gemini. The caller owns deletion of the local temporary file.
+    Cancellation is checked before external work and after blocking SDK calls.
+    The synchronous Interactions API request itself cannot be interrupted by
+    this callback; a cancellation requested during that request is applied as
+    soon as the SDK call returns, and its result is discarded by the worker.
     """
+    _check_cancelled(cancel_check)
     if not settings.gemini_api_key.strip():
         raise GeminiConfigurationError(
             "GEMINI_API_KEY не задан. Добавь ключ в .env и перезапусти worker."
@@ -158,14 +176,21 @@ def analyze_youtube_video(
     interaction_usage: dict[str, int | None] | None = None
     request_made = False
     try:
+        _check_cancelled(cancel_check)
         if local_video_path is not None:
             uploaded_file = client.files.upload(file=local_video_path)
-            uploaded_file = _wait_for_uploaded_file(client, uploaded_file)
+            _check_cancelled(cancel_check)
+            uploaded_file = _wait_for_uploaded_file(
+                client,
+                uploaded_file,
+                cancel_check=cancel_check,
+            )
             video_input = {"type": "video", "uri": uploaded_file.uri}
         else:
             logger.info("Using direct YouTube URI input; skipping Gemini Files upload")
             video_input = {"type": "video", "uri": youtube_url}
 
+        _check_cancelled(cancel_check)
         interaction = client.interactions.create(
             model=settings.gemini_model,
             input=[
@@ -182,6 +207,7 @@ def analyze_youtube_video(
         interaction_usage = normalise_interaction_usage(
             getattr(interaction, "usage", None)
         )
+        _check_cancelled(cancel_check)
         output_text = interaction.output_text
         if not output_text:
             raise GeminiAuditError(
