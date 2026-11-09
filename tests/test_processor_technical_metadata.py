@@ -165,11 +165,18 @@ def test_processor_continues_when_ffprobe_is_optional_and_missing(
 
     monkeypatch.setattr(processor, "probe_video", unavailable)
 
+    def cv_unavailable(path, duration_seconds=None):
+        raise OpenCVUnavailableError("OpenCV missing in test")
+
+    monkeypatch.setattr(processor, "analyze_video_frames", cv_unavailable)
+
     def fake_gemini(*args, **kwargs):
         with factory() as db:
             record = db.get(AuditRecord, "audit-no-ffprobe")
             assert record.technical_metadata is None
             assert record.technical_findings[0]["code"] == "ffprobe_unavailable"
+            assert record.visual_metadata is None
+            assert record.visual_findings[0]["code"] == "opencv_unavailable"
         return _FakeReport()
 
     monkeypatch.setattr(processor, "analyze_youtube_video", fake_gemini)
