@@ -148,9 +148,7 @@ def test_load_calibration_dataset_reports_line_numbers_and_duplicate_ids(tmp_pat
         "prediction": {"verdict": "candidate_accepted", "detected_defects": []},
     }
     dataset.write_text(
-        json.dumps(common) + "
-" + json.dumps(common) + "
-",
+        json.dumps(common) + chr(10) + json.dumps(common) + chr(10),
         encoding="utf-8",
     )
 
