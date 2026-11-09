@@ -33,6 +33,20 @@ class Settings(BaseSettings):
     ffprobe_timeout_seconds: int = 30
     ffprobe_required: bool = False
 
+    # OpenCV frame sampling. Signals remain advisory until calibrated against
+    # the active dataset specification and expert-labelled examples.
+    cv_analysis_required: bool = False
+    cv_sample_interval_seconds: float = 0.5
+    cv_max_samples: int = 1200
+    cv_resize_width: int = 320
+    cv_black_luma_threshold: int = 16
+    cv_black_pixel_ratio: float = 0.985
+    cv_black_min_duration_seconds: float = 0.75
+    cv_freeze_mean_diff_threshold: float = 0.8
+    cv_freeze_changed_pixel_ratio: float = 0.002
+    cv_freeze_pixel_delta: int = 3
+    cv_freeze_min_duration_seconds: float = 2.5
+
     # Worker-level retries happen only after the SDK's bounded retries are exhausted.
     audit_max_attempts: int = 2
     audit_retry_delay_seconds: int = 30
