@@ -117,3 +117,65 @@ def test_direct_youtube_uri_is_used_without_gemini_file_upload(monkeypatch):
         "type": "video",
         "uri": "https://www.youtube.com/watch?v=abcdefghijk",
     }
+
+
+def test_cancellation_callback_is_accepted_and_checked_around_interaction(monkeypatch):
+    monkeypatch.setattr(gemini_auditor.settings, "gemini_api_key", "test-key")
+    calls = {"cancel_check": 0, "interaction": 0}
+
+    def cancel_check():
+        calls["cancel_check"] += 1
+
+    class Interactions:
+        def create(self, **kwargs):
+            calls["interaction"] += 1
+            return SimpleNamespace(output_text=VALID_REPORT, usage=None)
+
+    client = SimpleNamespace(
+        interactions=Interactions(),
+        files=SimpleNamespace(delete=lambda **kwargs: None),
+    )
+    monkeypatch.setattr(gemini_auditor, "_make_client", lambda: client)
+
+    result = gemini_auditor.analyze_youtube_video(
+        "https://www.youtube.com/watch?v=abcdefghijk",
+        "live_action",
+        cancel_check=cancel_check,
+    )
+
+    assert result.report.verdict.value == "candidate_accepted"
+    assert calls["interaction"] == 1
+    assert calls["cancel_check"] >= 3
+
+
+def test_cancellation_before_gemini_request_prevents_external_call(monkeypatch):
+    from app.services.cancellation import AuditCancelled
+
+    monkeypatch.setattr(gemini_auditor.settings, "gemini_api_key", "test-key")
+    calls = {"client": 0, "interaction": 0}
+
+    def make_client():
+        calls["client"] += 1
+        return SimpleNamespace(
+            interactions=SimpleNamespace(
+                create=lambda **kwargs: calls.__setitem__(
+                    "interaction", calls["interaction"] + 1
+                )
+            ),
+            files=SimpleNamespace(delete=lambda **kwargs: None),
+        )
+
+    def cancel_now():
+        raise AuditCancelled("cancelled in test")
+
+    monkeypatch.setattr(gemini_auditor, "_make_client", make_client)
+
+    with pytest.raises(AuditCancelled):
+        gemini_auditor.analyze_youtube_video(
+            "https://www.youtube.com/watch?v=abcdefghijk",
+            "live_action",
+            cancel_check=cancel_now,
+        )
+
+    assert calls["client"] == 0
+    assert calls["interaction"] == 0
