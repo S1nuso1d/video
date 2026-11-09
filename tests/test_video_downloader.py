@@ -9,7 +9,7 @@ from app.services import video_downloader
 
 def test_default_download_format_does_not_cap_source_resolution() -> None:
     settings = Settings(_env_file=None)
-    assert settings.video_format == "bv*+ba/b"
+    assert settings.video_format == "bv+ba/b"
 
 
 def test_validate_video_url_rejects_non_http_urls() -> None:
