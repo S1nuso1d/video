@@ -66,7 +66,15 @@ def create_audit(factory, *, review_status: str = "pending", video_id: str = "dQ
             verdict="manual_review_required",
             decision="REVIEW",
             review_status=review_status,
-            report={"verdict": "manual_review_required"},
+            report={
+                "verdict": "manual_review_required",
+                "summary": "Ambiguous evidence requires an expert decision.",
+                "review_coverage": "limited",
+                "detected_defects": [],
+                "not_assessed": ["Audio context"],
+                "manual_review_reasons": ["The sampled evidence is inconclusive."],
+                "markup_comment": "Please inspect this video manually.",
+            },
         )
         db.add(audit)
         db.commit()
