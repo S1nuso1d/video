@@ -207,3 +207,60 @@ def test_stale_worker_cannot_start_processing_without_current_lease(db_factory, 
     record = _get_audit(db_factory, audit_id)
     assert record.status == "processing"
     assert record.lease_token == "new-lease"
+
+
+
+def test_expired_worker_cannot_overwrite_result_after_lease_changes(db_factory, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services import processor
+    from app.services.video_downloader import DownloadedVideo
+
+    audit_id = _insert_audit(
+        db_factory,
+        status="processing",
+        attempt_count=1,
+        started_at=datetime.now(timezone.utc),
+        heartbeat_at=datetime.now(timezone.utc),
+        worker_id="old-worker",
+        lease_token="old-lease",
+    )
+    monkeypatch.setattr(processor, "SessionLocal", db_factory)
+    work_dir = tmp_path / "audit-work"
+    work_dir.mkdir()
+    video_path = work_dir / "video.mp4"
+    video_path.write_bytes(b"video")
+    monkeypatch.setattr(
+        processor,
+        "download_video",
+        lambda *args, **kwargs: DownloadedVideo(path=video_path, work_dir=work_dir),
+    )
+
+    class FakeReport:
+        verdict = SimpleNamespace(value="candidate_accepted")
+        summary = "Test report"
+        detected_defects = []
+        markup_comment = "Test comment"
+
+        def model_dump(self, mode="python"):
+            return {"verdict": "candidate_accepted", "summary": self.summary}
+
+    def change_lease_during_analysis(*args, **kwargs):
+        with db_factory() as db:
+            record = db.get(AuditRecord, audit_id)
+            record.worker_id = "new-worker"
+            record.lease_token = "new-lease"
+            record.heartbeat_at = datetime.now(timezone.utc)
+            db.commit()
+        return FakeReport()
+
+    monkeypatch.setattr(processor, "analyze_youtube_video", change_lease_during_analysis)
+
+    processor.process_audit(audit_id, "old-lease")
+
+    record = _get_audit(db_factory, audit_id)
+    assert record.status == "processing"
+    assert record.worker_id == "new-worker"
+    assert record.lease_token == "new-lease"
+    assert record.report is None
+    assert not work_dir.exists()
