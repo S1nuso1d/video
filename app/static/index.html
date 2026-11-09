@@ -128,6 +128,125 @@ async function loadHistory(){try{cache=await api("/api/v1/audits?limit=30&offset
 const reviewStatusLabels={not_required:"Не требуется",pending:"Ожидает reviewer",assigned:"Назначен reviewer",completed:"Проверка завершена"};
 const humanDecisionLabels={approved:"Одобрено",rejected:"Отклонено",needs_changes:"Требуются исправления"};
 const reviewActionLabels={queued:"Добавлено в очередь",assigned:"Назначен reviewer",unassigned:"Назначение снято",claimed:"Взято в работу",decision_submitted:"Решение проверяющего",reopened:"Проверка открыта повторно"};
+
+function utcDateString(value){return value.toISOString().slice(0,10)}
+function initializeAdminDashboard(){
+ const today=new Date(),from=new Date(today.getTime());from.setUTCDate(from.getUTCDate()-29);
+ if(!$("dashboardTo").value)$("dashboardTo").value=utcDateString(today);
+ if(!$("dashboardFrom").value)$("dashboardFrom").value=utcDateString(from);
+ loadAdminDashboard();
+}
+function adminDateQuery(){
+ const from=$("dashboardFrom").value,to=$("dashboardTo").value;
+ if(!from||!to)throw Error("Укажите обе даты периода.");
+ if(from>to)throw Error("Начальная дата не может быть позже конечной.");
+ return "date_from="+encodeURIComponent(from)+"&date_to="+encodeURIComponent(to);
+}
+function renderAdminBreakdown(targetId,values,labels){
+ const target=$(targetId);target.replaceChildren();
+ const entries=Object.entries(values||{}).sort((a,b)=>b[1]-a[1]);
+ if(!entries.length){target.append(node("div","empty","Нет данных за выбранный период."));return}
+ const max=Math.max(1,...entries.map(item=>item[1]));
+ entries.forEach(([key,value])=>{
+  const line=node("div","admin-line"),name=node("span","",labels[key]||key),bar=node("div","admin-bar"),fill=node("span"),count=node("strong","",value);
+  fill.style.width=(value/max*100)+"%";bar.append(fill);line.append(name,bar,count);target.append(line);
+ });
+}
+function renderAdminDaily(items){
+ const target=$("adminDaily");target.replaceChildren();
+ if(!items||!items.length){target.append(node("div","empty","Нет аудитов за выбранный период."));return}
+ const max=Math.max(1,...items.map(item=>item.total));
+ items.forEach(item=>{
+  const line=node("div","admin-day"),day=node("span","",new Date(item.date+"T00:00:00Z").toLocaleDateString("ru-RU",{day:"2-digit",month:"2-digit"}));
+  const bar=node("div","admin-bar"),fill=node("span");fill.style.width=(item.total/max*100)+"%";bar.append(fill);
+  line.append(day,bar,node("strong","",item.total));
+  line.title="Завершено: "+item.completed+" · Ошибки: "+item.failed+" · Направлено на проверку: "+item.sent_to_review;
+  target.append(line);
+ });
+}
+function renderAdminReviewers(items){
+ const target=$("adminReviewerRows");target.replaceChildren();
+ if(!items||!items.length){
+  const row=node("tr"),cell=node("td","","Нет зарегистрированных reviewer");cell.colSpan=7;row.append(cell);target.append(row);return;
+ }
+ items.forEach(item=>{
+  const tr=node("tr"),avg=item.average_queue_seconds==null?"—":item.average_queue_seconds<60?Math.round(item.average_queue_seconds)+" сек":(item.average_queue_seconds/60).toFixed(1)+" мин";
+  [item.email,item.assigned_open,item.completed_reviews,item.approved,item.rejected,item.needs_changes,avg].forEach((value,index)=>{
+   const td=node("td","",value);if(index===0)td.style.fontWeight="600";tr.append(td);
+  });
+  target.append(tr);
+ });
+}
+function renderAdminDashboard(data){
+ adminOverview=data;
+ $("kpiAudits").textContent=data.total_audits.toLocaleString("ru-RU");
+ $("kpiCompleted").textContent=(data.audits_by_status.completed||0).toLocaleString("ru-RU");
+ $("kpiCompletionRate").textContent=data.completion_rate_percent+"% от всех заданий";
+ $("kpiFailed").textContent=(data.audits_by_status.failed||0).toLocaleString("ru-RU");
+ $("kpiFailureRate").textContent=data.failure_rate_percent+"% от всех заданий";
+ const openReviews=(data.human_review_statuses.pending||0)+(data.human_review_statuses.assigned||0);
+ $("kpiReviews").textContent=openReviews.toLocaleString("ru-RU");
+ $("kpiCost").textContent=data.gemini_estimated_cost_usd==null?"Нет данных":"$"+data.gemini_estimated_cost_usd.toFixed(4);
+ $("kpiCostRub").textContent=data.gemini_estimated_cost_rub==null?"Оценка RUB отключена":"≈ "+data.gemini_estimated_cost_rub.toFixed(2)+" ₽";
+ $("kpiTokens").textContent=(data.token_usage.total_tokens||0).toLocaleString("ru-RU");
+ $("kpiRequests").textContent="Gemini запросов: "+(data.gemini_requests||0).toLocaleString("ru-RU");
+ $("kpiPeriod").textContent=data.date_from+" — "+data.date_to+" (UTC)";
+ renderAdminDaily(data.daily);
+ renderAdminBreakdown("adminVerdicts",data.machine_verdicts,{candidate_accepted:"Предварительно подходит",candidate_rejected:"Предварительно отклонено",manual_review_required:"Нужна ручная проверка",unknown:"Не указан"});
+ renderAdminBreakdown("adminCriteria",data.criteria_decisions,{APPROVE:"Критерии выполнены",REVIEW:"Нужна проверка",REJECT:"Критерии не выполнены",unknown:"Не задано"});
+ renderAdminBreakdown("adminReviewStates",data.human_review_statuses,{not_required:"Не требуется",pending:"Ожидает",assigned:"Назначен",completed:"Завершён"});
+ renderAdminReviewers(data.reviewers);
+}
+async function loadAdminDashboard(){
+ if(!currentUser||currentUser.role!=="admin")return;
+ const button=$("dashboardRefreshButton");button.disabled=true;
+ try{renderAdminDashboard(await api("/api/v1/admin/overview?"+adminDateQuery()))}
+ catch(e){$("adminDaily").replaceChildren(node("div","message show error",errText(e)))}
+ finally{button.disabled=false}
+}
+async function loadAdminUsers(){
+ if(!currentUser||currentUser.role!=="admin")return;
+ const target=$("adminUserList");
+ try{adminUsers=await api("/api/v1/admin/users");renderAdminUsers()}
+ catch(e){target.replaceChildren(node("div","message show error",errText(e)))}
+}
+function renderAdminUsers(){
+ const target=$("adminUserList");target.replaceChildren();
+ if(!adminUsers.length){target.append(node("div","empty","Пользователей пока нет."));return}
+ const labels={admin:"Администратор",operator:"Оператор",reviewer:"Reviewer"};
+ adminUsers.forEach(user=>{
+  const row=node("div","admin-user-row"),info=node("div"),name=node("div","admin-user-name",user.email);
+  const meta=node("span","admin-user-meta",labels[user.role]+" · "+(user.is_active?"Активен":"Отключён")+" · Вход: "+(user.last_login_at?new Date(user.last_login_at).toLocaleString("ru-RU"):"ещё не выполнялся"));
+  info.append(name,meta);
+  const controls=node("div","admin-user-actions"),role=node("select","select"),activeLabel=node("label","admin-user-meta");
+  [["admin","Администратор"],["operator","Оператор"],["reviewer","Reviewer"]].forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;option.selected=value===user.role;role.append(option)});
+  const active=document.createElement("input");active.type="checkbox";active.checked=user.is_active;active.setAttribute("aria-label","Учётная запись активна");
+  activeLabel.append(active,document.createTextNode(" Активен"));
+  const save=node("button","secondary","Сохранить");save.type="button";
+  const self=user.id===currentUser.id;
+  if(self){role.disabled=true;active.disabled=true;save.disabled=true;save.title="Собственную учётную запись изменить нельзя"}
+  save.addEventListener("click",async()=>{
+   save.disabled=true;
+   try{
+    await api("/api/v1/admin/users/"+encodeURIComponent(user.id),{method:"PATCH",body:JSON.stringify({role:role.value,is_active:active.checked})});
+    await loadAdminUsers();await loadReviewerOptions();
+   }catch(e){save.disabled=false;alert(errText(e))}
+  });
+  controls.append(role,activeLabel,save);row.append(info,controls);target.append(row);
+ });
+}
+async function exportAdminCsv(){
+ const button=$("dashboardExportButton");button.disabled=true;
+ try{
+  const response=await fetch("/api/v1/admin/audits.csv?"+adminDateQuery(),{headers:{Authorization:"Bearer "+accessToken,Accept:"text/csv"}});
+  if(response.status===401){accessToken=null;sessionStorage.removeItem("videoAuditorToken");showLogin("Сессия завершилась. Войдите снова.");throw Error("Требуется повторный вход.")}
+  if(!response.ok){let detail="Не удалось экспортировать CSV";try{const data=await response.json();detail=data.detail||detail}catch(_){}throw Error(detail)}
+  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download="video-auditor-audits-"+$("dashboardFrom").value+"-"+$("dashboardTo").value+".csv";
+  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(e){alert(errText(e))}
+ finally{button.disabled=false}
+}
 async function loadReviewerOptions(){try{reviewerOptions=await api("/api/v1/auth/reviewers")}catch(e){reviewerOptions=[]}}
 async function loadReviewQueue(){
  if(!currentUser||currentUser.role==="operator")return;
@@ -412,6 +531,16 @@ $("loginForm").addEventListener("submit",async event=>{
   const user=await api("/api/v1/auth/me");$("loginPassword").value="";showWorkspace(user);
  }catch(e){accessToken=null;sessionStorage.removeItem("videoAuditorToken");loginMessage.textContent=errText(e);loginMessage.className="message show error"}
  finally{loginButton.disabled=false;loginButton.textContent="Войти →"}
+});
+$("dashboardRefreshButton").addEventListener("click",loadAdminDashboard);
+$("dashboardExportButton").addEventListener("click",exportAdminCsv);
+$("adminCreateUserForm").addEventListener("submit",async event=>{
+ event.preventDefault();const button=$("adminCreateUserButton"),message=$("adminUserMessage");button.disabled=true;message.className="message";
+ try{
+  await api("/api/v1/auth/users",{method:"POST",body:JSON.stringify({email:$("adminNewEmail").value.trim(),password:$("adminNewPassword").value,role:$("adminNewRole").value})});
+  $("adminNewPassword").value="";message.textContent="Учётная запись создана.";message.className="message show info";await loadAdminUsers();await loadReviewerOptions();
+ }catch(e){message.textContent=errText(e);message.className="message show error"}
+ finally{button.disabled=false}
 });
 $("logoutButton").addEventListener("click",()=>{
  accessToken=null;sessionStorage.removeItem("videoAuditorToken");selected=null;cache=[];stop();showLogin("Вы вышли из системы.");
