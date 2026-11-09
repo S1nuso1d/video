@@ -275,7 +275,15 @@ def analyze_video_frames(
         original_height = None
 
         for frame_index in frame_indices:
-            capture.set(cv2.CAP_PROP_POS_FRAMES, float(frame_index))
+            if time.monotonic() - analysis_started_at > settings.cv_analysis_timeout_seconds:
+                raise VideoFrameAnalysisError(
+                    "Превышено время ограниченного анализа видеокадров (OpenCV)."
+                )
+            positioned = capture.set(cv2.CAP_PROP_POS_FRAMES, float(frame_index))
+            if not positioned and frame_index > 0:
+                raise VideoFrameAnalysisError(
+                    "OpenCV не поддерживает точную выборку кадров для этого видео."
+                )
             ok, frame = capture.read()
             if not ok or frame is None:
                 logger.debug(
