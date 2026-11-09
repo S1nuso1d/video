@@ -404,5 +404,4 @@ def calibration_report_markdown(report: Mapping[str, Any]) -> str:
     lines.extend(["", "## Interpretation notes", ""])
     lines.extend(f"- {note}" for note in report["limitations"])
     lines.append("")
-    return "
-".join(lines)
+    return chr(10).join(lines)
