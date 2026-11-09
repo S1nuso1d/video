@@ -168,9 +168,7 @@ def test_load_calibration_dataset_accepts_blank_lines_and_real_api_report_shape(
             "visual_findings": [],
         },
     }
-    dataset.write_text("
-" + json.dumps(record) + "
-", encoding="utf-8")
+    dataset.write_text(chr(10) + json.dumps(record) + chr(10), encoding="utf-8")
 
     loaded = load_calibration_dataset(dataset)
 
