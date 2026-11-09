@@ -128,8 +128,26 @@ function appendVisualEvidence(parent,a){
    const evidenceTags=node("div","tags");
    if(Number.isFinite(ev.estimated_duration_seconds))evidenceTags.append(node("span","tag","Длительность: ~"+ev.estimated_duration_seconds.toFixed(2)+" сек"));
    if(Number.isFinite(ev.sample_count))evidenceTags.append(node("span","tag","Выборок в участке: "+ev.sample_count));
+   if(Number.isFinite(ev.mean_focus_measure))evidenceTags.append(node("span","tag","Фокус-метрика: "+ev.mean_focus_measure.toFixed(1)));
+   if(Number.isFinite(ev.scene_change_score))evidenceTags.append(node("span","tag","Оценка смены: "+ev.scene_change_score.toFixed(2)));
    if(f.confidence)evidenceTags.append(node("span","tag","Уверенность: "+f.confidence));
    if(evidenceTags.childNodes.length)card.append(evidenceTags);
+   const frames=Array.isArray(ev.frames)?ev.frames.filter(frame=>
+    frame&&frame.mime_type==="image/jpeg"&&typeof frame.data_base64==="string"&&
+    frame.data_base64.length<=20000&&/^[A-Za-z0-9+/]+={0,2}$/.test(frame.data_base64)
+   ):[];
+   if(frames.length){
+    const gallery=node("div","evidence-frames");
+    frames.forEach(frame=>{
+     const figure=node("figure","evidence-frame"),img=document.createElement("img");
+     img.src="data:image/jpeg;base64,"+frame.data_base64;
+     img.alt="Кадр-доказательство на "+formatVisualTime(frame.timestamp_seconds);
+     img.loading="lazy";
+     figure.append(img,node("figcaption","",formatVisualTime(frame.timestamp_seconds)));
+     gallery.append(figure);
+    });
+    card.append(gallery);
+   }
    list.append(card);
   });
   parent.append(list);
