@@ -13,6 +13,8 @@ class Settings(BaseSettings):
         "localhost:5433/video_auditor"
     )
     gemini_api_key: str = ""
+    # Google YouTube URL input is a preview feature; set false to upload local files.
+    gemini_youtube_direct: bool = True
     # Authentication is disabled until a strong secret is configured.
     # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
     auth_secret_key: str = ""
@@ -51,8 +53,8 @@ class Settings(BaseSettings):
     # OpenCV frame sampling. Signals remain advisory until calibrated against
     # the active dataset specification and expert-labelled examples.
     cv_analysis_required: bool = False
-    cv_sample_interval_seconds: float = 0.5
-    cv_max_samples: int = 1200
+    cv_sample_interval_seconds: float = 1.0
+    cv_max_samples: int = 600
     cv_analysis_timeout_seconds: int = 120
     cv_resize_width: int = 320
     cv_black_luma_threshold: int = 16

@@ -47,7 +47,7 @@ def recover_stale_jobs(now: datetime | None = None) -> int:
     retry_delay = max(1, int(settings.audit_retry_delay_seconds))
     retryable = AuditRecord.attempt_count < max_attempts
     stale_processing = and_(
-        AuditRecord.status == "processing",
+        AuditRecord.status.in_(("processing", "cancelling")),
         or_(
             AuditRecord.heartbeat_at < cutoff,
             and_(
@@ -62,17 +62,35 @@ def recover_stale_jobs(now: datetime | None = None) -> int:
             update(AuditRecord)
             .where(stale_processing)
             .values(
-                status=case((retryable, "pending"), else_="failed"),
+                status=case(
+                    (AuditRecord.status == "cancelling", "cancelled"),
+                    (retryable, "pending"),
+                    else_="failed",
+                ),
                 next_retry_at=case(
+                    (AuditRecord.status == "cancelling", None),
                     (retryable, now + timedelta(seconds=retry_delay)),
                     else_=None,
                 ),
-                completed_at=case((retryable, None), else_=now),
-                started_at=case((retryable, None), else_=AuditRecord.started_at),
+                completed_at=case(
+                    (AuditRecord.status == "cancelling", now),
+                    (retryable, None),
+                    else_=now,
+                ),
+                started_at=case(
+                    (AuditRecord.status == "cancelling", AuditRecord.started_at),
+                    (retryable, None),
+                    else_=AuditRecord.started_at,
+                ),
+                processing_stage=None,
                 heartbeat_at=None,
                 worker_id=None,
                 lease_token=None,
                 error_message=case(
+                    (
+                        AuditRecord.status == "cancelling",
+                        "Анализ отменён: worker не завершился штатно.",
+                    ),
                     (
                         retryable,
                         "Worker lease expired before the audit finished. "
@@ -117,6 +135,7 @@ def claim_next_job(worker_id: str) -> WorkerClaim | None:
                 record.worker_id = worker_id
                 record.lease_token = lease_token
                 record.next_retry_at = None
+                record.processing_stage = None
                 record.completed_at = None
                 record.error_message = None
                 # Do not expose technical evidence from a previous attempt
@@ -143,7 +162,7 @@ def refresh_job_lease(audit_id: str, lease_token: str) -> bool:
             update(AuditRecord)
             .where(
                 AuditRecord.id == audit_id,
-                AuditRecord.status == "processing",
+                AuditRecord.status.in_(("processing", "cancelling")),
                 AuditRecord.lease_token == lease_token,
             )
             .values(heartbeat_at=now)

@@ -85,3 +85,35 @@ def test_usage_is_attached_to_error_when_report_json_is_invalid(monkeypatch):
     assert captured.value.request_made is True
     assert captured.value.usage["input_tokens"] == 500
     assert captured.value.usage["output_tokens"] == 90
+
+
+
+def test_direct_youtube_uri_is_used_without_gemini_file_upload(monkeypatch):
+    monkeypatch.setattr(gemini_auditor.settings, "gemini_api_key", "test-key")
+    captured = {}
+
+    class Interactions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(output_text=VALID_REPORT, usage=None)
+
+    class Files:
+        def upload(self, **kwargs):
+            raise AssertionError("Direct YouTube mode must not upload a local file")
+
+        def delete(self, **kwargs):
+            return None
+
+    client = SimpleNamespace(interactions=Interactions(), files=Files())
+    monkeypatch.setattr(gemini_auditor, "_make_client", lambda: client)
+
+    result = gemini_auditor.analyze_youtube_video(
+        "https://www.youtube.com/watch?v=abcdefghijk",
+        "live_action",
+    )
+
+    assert result.report.verdict.value == "candidate_accepted"
+    assert captured["input"][1] == {
+        "type": "video",
+        "uri": "https://www.youtube.com/watch?v=abcdefghijk",
+    }

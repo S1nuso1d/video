@@ -8,6 +8,7 @@ from google import genai
 from google.genai import types
 
 from app.core.config import settings
+from app.services.cancellation import AuditCancelled, AuditLeaseLost
 from app.rules.sft_stage1_ru import build_audit_prompt
 from app.schemas.audit import AuditReport
 from app.services.report_policy import enforce_conservative_policy
@@ -162,6 +163,7 @@ def analyze_youtube_video(
             uploaded_file = _wait_for_uploaded_file(client, uploaded_file)
             video_input = {"type": "video", "uri": uploaded_file.uri}
         else:
+            logger.info("Using direct YouTube URI input; skipping Gemini Files upload")
             video_input = {"type": "video", "uri": youtube_url}
 
         interaction = client.interactions.create(
@@ -193,6 +195,8 @@ def analyze_youtube_video(
             usage=interaction_usage,
             request_made=True,
         )
+    except (AuditCancelled, AuditLeaseLost):
+        raise
     except (GeminiConfigurationError, GeminiAuditError) as exc:
         if isinstance(exc, GeminiAuditError):
             if exc.usage is None:

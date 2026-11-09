@@ -34,6 +34,7 @@ def _prepare(tmp_path, monkeypatch, audit_id):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     monkeypatch.setattr(processor, "SessionLocal", factory)
+    monkeypatch.setattr("app.services.cancellation.SessionLocal", factory)
 
     with factory() as db:
         db.add(AuditRecord(
@@ -78,7 +79,7 @@ def _prepare(tmp_path, monkeypatch, audit_id):
     monkeypatch.setattr(
         processor,
         "analyze_video_frames",
-        lambda path, duration_seconds=None: FrameAnalysisResult(
+        lambda path, duration_seconds=None, cancel_check=None: FrameAnalysisResult(
             metadata={"sampled_frames": 2, "sample_interval_seconds": 0.5},
             findings=[],
         ),
@@ -95,10 +96,12 @@ def test_processor_persists_usage_cost_and_stage_timings_on_success(
     tmp_path, monkeypatch
 ):
     engine, factory, work_dir = _prepare(tmp_path, monkeypatch, "audit-cost-success")
-    monkeypatch.setattr(
-        processor,
-        "analyze_youtube_video",
-        lambda *args, **kwargs: GeminiAuditResult(
+    monkeypatch.setattr(processor.settings, "gemini_youtube_direct", True)
+    gemini_kwargs = {}
+
+    def fake_gemini(*args, **kwargs):
+        gemini_kwargs.update(kwargs)
+        return GeminiAuditResult(
             report=FakeReport(),
             usage={
                 "input_tokens": 1_000_000,
@@ -107,11 +110,13 @@ def test_processor_persists_usage_cost_and_stage_timings_on_success(
                 "cached_input_tokens": 200_000,
                 "total_tokens": 1_100_000,
             },
-        ),
-    )
+        )
+
+    monkeypatch.setattr(processor, "analyze_youtube_video", fake_gemini)
 
     try:
         processor.process_audit("audit-cost-success", "test-lease")
+        assert gemini_kwargs["local_video_path"] is None
         with factory() as db:
             record = db.get(AuditRecord, "audit-cost-success")
             assert record.status == "completed"

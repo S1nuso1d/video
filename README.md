@@ -13,13 +13,14 @@ Video Auditor is a preliminary video quality assessment application built with *
 - REST API and interactive Swagger documentation at `/docs`.
 - PostgreSQL-backed audit queue.
 - Separate worker process; long-running downloads and AI requests do not run inside the HTTP request.
+- User/admin cancellation for queued and running audits, with cooperative worker checkpoints, process cleanup, and a persisted live processing stage.
 - `yt-dlp`-based source acquisition with per-audit temporary directories, download timeout, and maximum file-size setting.
 - Temporary local video cleanup after processing, plus cleanup of abandoned temporary directories on worker startup.
 - **FFprobe technical metadata extraction** before the AI request: duration, file size, container, codec, resolution, pixel format, frame rates, bitrate, frame count, and audio stream metadata.
 - **OpenCV frame sampling** across the video timeline with a configurable sample cap and resized frames. It records timestamped near-black segments, freeze-like regions, scene-change candidates, and sustained low-focus (possible blur) intervals as advisory evidence. Representative low-resolution JPEG previews are attached to findings within strict per-video count and size limits; these signals never change the final verdict by themselves.
 - Technical observations are stored separately from AI-detected defects. A missing audio stream is a warning; a measured duration below five seconds is recorded as an SFT finding. These observations are evidence, not an automatic final verdict.
 - If FFprobe is missing locally, processing can continue with a visible `ffprobe_unavailable` finding unless `FFPROBE_REQUIRED=true`.
-- Gemini file upload and processing-state polling before analysis.
+- Direct public YouTube URL input to Gemini Interactions API by default, avoiding a second local-file upload; an opt-out flag retains Gemini Files upload for videos that cannot be accessed through direct YouTube input.
 - Pydantic validation for structured JSON reports.
 - Conservative verdict policy that routes insufficiently supported results to manual review.
 - Bounded SDK and worker retries, including queue cooldown after Gemini HTTP 429.
@@ -175,6 +176,7 @@ Open `http://127.0.0.1:8000/` for the interface or `http://127.0.0.1:8000/docs` 
 | `POST /api/v1/audits` | Create an audit (admin/operator) |
 | `GET /api/v1/audits` | List permitted audits (admin/reviewer: all; operator: own) |
 | `GET /api/v1/audits/{audit_id}` | Get an audit if the current role permits access |
+| `POST /api/v1/audits/{audit_id}/cancel` | Cancel a queued audit or request cancellation of a running audit (admin/operator; operators can cancel only their own) |
 | `GET /api/v1/reviews/queue` | List open manual-review cases (admin/reviewer) |
 | `POST /api/v1/reviews/{audit_id}/claim` | Claim an unassigned review (reviewer) |
 | `PUT /api/v1/reviews/{audit_id}/assignment` | Assign/unassign a reviewer (admin) |
@@ -193,8 +195,12 @@ Audit statuses:
 
 - `pending` — waiting to be claimed or waiting for a retry time;
 - `processing` — currently owned by a worker lease;
+- `cancelling` — cancellation was requested and the worker is stopping at the next safe checkpoint;
+- `cancelled` — cancellation completed; the job is not retried;
 - `completed` — the report was created successfully;
 - `failed` — processing ended after a non-retryable error or exhausted attempt budget.
+
+The API also exposes `processing_stage` (`download`, `ffprobe`, `opencv`, or `gemini`) so the UI can show which stage is active. A pending audit is cancelled immediately. A running audit is cancelled cooperatively: downloads and OpenCV sampling stop at their next checkpoint, Gemini file preparation is interrupted between polling requests, and temporary files are cleaned. The synchronous Gemini Interactions request cannot be forcefully interrupted by the current SDK call; cancellation is applied as soon as that request returns or times out, and its result is not committed.
 
 Report verdicts:
 
@@ -225,6 +231,7 @@ All settings are loaded from `.env`.
 | `DATABASE_URL` | local Docker PostgreSQL | SQLAlchemy connection string |
 | `GEMINI_API_KEY` | empty | Gemini API key |
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini model |
+| `GEMINI_YOUTUBE_DIRECT` | `true` | Pass a public YouTube URL directly to Gemini instead of uploading the local copy; set `false` to use the Gemini Files API |
 | `GEMINI_TIMEOUT_MS` | `180000` | HTTP request timeout in milliseconds |
 | `GEMINI_RETRY_ATTEMPTS` | `3` | SDK attempts, including the first |
 | `GEMINI_INPUT_PRICE_USD_PER_MILLION` | `0.75` | Configured paid-tier input rate per 1M tokens |
@@ -241,8 +248,8 @@ All settings are loaded from `.env`.
 | `FFPROBE_TIMEOUT_SECONDS` | `30` | Metadata extraction timeout |
 | `FFPROBE_REQUIRED` | `false` | Fail the audit if FFprobe is unavailable |
 | `CV_ANALYSIS_REQUIRED` | `false` | Fail the audit if OpenCV frame analysis cannot run |
-| `CV_SAMPLE_INTERVAL_SECONDS` | `0.5` | Target interval between sampled frames |
-| `CV_MAX_SAMPLES` | `1200` | Maximum number of frames sampled per video |
+| `CV_SAMPLE_INTERVAL_SECONDS` | `1.0` | Target interval between sampled frames |
+| `CV_MAX_SAMPLES` | `600` | Maximum number of frames sampled per video |
 | `CV_ANALYSIS_TIMEOUT_SECONDS` | `120` | Time budget for the OpenCV sampling stage |
 | `CV_RESIZE_WIDTH` | `320` | Maximum width used for analysis frames |
 | `CV_BLACK_LUMA_THRESHOLD` | `16` | Grayscale threshold for dark pixels (0–255) |
@@ -335,7 +342,11 @@ The pricing rate card is configurable in `.env`. Defaults target the Gemini 3.8 
 
 Each audit also stores per-attempt duration for download, FFprobe, OpenCV, and Gemini, plus cumulative timing across worker retries. Usage/costs from a Gemini response are preserved even when later report validation fails and the worker retries. Manual requeue clears historical usage/cost and timing fields so the next run starts a new measurement.
 
-The API response exposes `gemini_usage`, `gemini_cost_usd`, `gemini_cost_rub`, and `processing_metrics`. The web interface shows token counts, estimate availability, and stage timings.
+The API response exposes `gemini_usage`, `gemini_cost_usd`, `gemini_cost_rub`, `processing_metrics`, and the live `processing_stage`. The worker logs the duration of downloading, FFprobe, OpenCV, Gemini file upload/preparation (when enabled), and the Gemini interaction separately. The web interface polls only the currently selected audit every five seconds; it refreshes the history and review queue only when the status changes.
+
+`GEMINI_YOUTUBE_DIRECT=true` uses Google’s documented YouTube URL input for Gemini Interactions and avoids uploading the same video again through the Gemini Files API. The source must be accessible to Google as a public YouTube video; this input method is currently documented as a preview feature. Set `GEMINI_YOUTUBE_DIRECT=false` to use the local downloaded file via Gemini Files instead. See the [official Gemini video understanding guide](https://ai.google.dev/gemini-api/docs/video-understanding).
+
+OpenCV defaults to at most 600 samples with a target interval of one second. It decodes frames sequentially rather than seeking independently for every sample, reducing repeated decoding on long inter-frame-compressed videos. The source download is still kept at the best available original quality because resolution and bitrate can be project criteria; it is not silently capped at 720p. These changes improve expected processing efficiency but do not guarantee a fixed wall-clock time: YouTube download speed and Gemini upload/preparation/inference remain external bottlenecks. For local deployments with an existing `.env`, update `CV_SAMPLE_INTERVAL_SECONDS=1.0` and `CV_MAX_SAMPLES=600` manually; `.env` overrides the code defaults.
 
 ## Expert-labelled dataset calibration
 

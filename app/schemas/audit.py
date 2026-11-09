@@ -130,6 +130,7 @@ class AuditResponse(BaseModel):
     video_id: str
     content_type: ContentType
     status: str
+    processing_stage: str | None = None
     verdict: Verdict | None = None
     summary: str | None = None
     report: AuditReport | None = None
