@@ -133,5 +133,7 @@ class AuditResponse(BaseModel):
     detected_defects: list[dict] | None = None
     technical_metadata: dict | None = None
     technical_findings: list[dict] | None = None
+    visual_metadata: dict | None = None
+    visual_findings: list[dict] | None = None
     markup_comment: str | None = None
     error_message: str | None = None
