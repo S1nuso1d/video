@@ -2,6 +2,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -33,6 +34,22 @@ def create_audit_temp_dir(audit_id: str) -> Path:
 def cleanup_audit_temp_dir(work_dir: Path | None) -> None:
     if work_dir is not None:
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def cleanup_abandoned_temp_dirs(older_than_seconds: int = 7200) -> int:
+    root = Path(settings.video_temp_root)
+    if not root.exists():
+        return 0
+    cutoff = time.time() - max(0, older_than_seconds)
+    removed = 0
+    for path in root.iterdir():
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def validate_video_url(url: str) -> None:
