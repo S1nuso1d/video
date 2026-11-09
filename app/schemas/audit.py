@@ -104,7 +104,7 @@ class DetectedDefect(BaseModel):
     end_time: str | None = Field(description="Ориентировочный конец интервала; null, если не уверенны")
     estimated_video_fraction: float | None = Field(default=None, ge=0.0, le=1.0, description="Оценка доли длительности всего ролика, затронутая дефектом; null при отсутствии основания")
     confidence: EvidenceConfidence
-    description: str = Field(min_length=3, max_length=1000, description="Наблюдаемый признак и почему он нарушает чек-лист")
+    description: str = Field(min_length=3, max_length=1000)
 
 
 class AuditReport(BaseModel):
@@ -112,11 +112,11 @@ class AuditReport(BaseModel):
 
     verdict: Verdict
     summary: str = Field(min_length=3, max_length=1500)
-    review_coverage: ReviewCoverage = Field(description="Насколько модель смогла оценить весь ролик для предварительной проверки")
+    review_coverage: ReviewCoverage
     detected_defects: list[DetectedDefect] = Field(default_factory=list)
-    not_assessed: list[str] = Field(default_factory=list, description="Что не получилось надёжно проверить")
+    not_assessed: list[str] = Field(default_factory=list)
     manual_review_reasons: list[str] = Field(default_factory=list)
-    markup_comment: str = Field(max_length=1000, description="Краткий комментарий на русском для интерфейса разметки")
+    markup_comment: str = Field(max_length=1000)
 
 
 class AuditResponse(BaseModel):
@@ -131,5 +131,7 @@ class AuditResponse(BaseModel):
     summary: str | None = None
     report: AuditReport | None = None
     detected_defects: list[dict] | None = None
+    technical_metadata: dict | None = None
+    technical_findings: list[dict] | None = None
     markup_comment: str | None = None
     error_message: str | None = None
