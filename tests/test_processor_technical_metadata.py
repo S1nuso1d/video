@@ -131,6 +131,8 @@ def test_processor_persists_technical_evidence_before_gemini(
             assert record.status == "completed"
             assert record.technical_metadata == metadata
             assert record.technical_findings == findings
+            assert record.visual_metadata == visual_metadata
+            assert record.visual_findings == visual_findings
             assert record.markup_comment == "Предварительно подходит."
             assert record.verdict == "candidate_accepted"
         assert not work_dir.exists()
