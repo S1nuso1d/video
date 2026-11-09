@@ -175,7 +175,10 @@ def aggregate_usage(
             totals[key] = None
 
     all_usage_available = all(
-        bool(item.get("usage_available")) for item in existing_attempts
+        bool(item.get("usage_available"))
+        and item.get("input_tokens") is not None
+        and item.get("output_tokens") is not None
+        for item in existing_attempts
     )
     return {
         "model": attempt.get("model") or (previous or {}).get("model"),
