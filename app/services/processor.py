@@ -23,6 +23,11 @@ from app.services.video_probe import (
     VideoProbeError,
     probe_video,
 )
+from app.services.frame_analyzer import (
+    OpenCVUnavailableError,
+    VideoFrameAnalysisError,
+    analyze_video_frames,
+)
 
 logger = logging.getLogger(__name__)
 
