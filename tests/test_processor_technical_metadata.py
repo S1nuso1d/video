@@ -117,6 +117,8 @@ def test_processor_persists_technical_evidence_before_gemini(
             )
             assert record.technical_metadata == metadata
             assert record.technical_findings == findings
+            assert record.visual_metadata == visual_metadata
+            assert record.visual_findings == visual_findings
         return _FakeReport()
 
     monkeypatch.setattr(processor, "analyze_youtube_video", fake_gemini)
