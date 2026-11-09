@@ -226,3 +226,50 @@ def test_no_criteria_returns_no_project_decision():
         visual_findings=None,
         report=None,
     ) is None
+
+def test_visual_rules_cannot_be_configured_as_critical():
+    with pytest.raises(ValidationError, match="OpenCV visual signals are advisory"):
+        _criteria([
+            _visual(
+                "finding_present",
+                "black_frame_segment",
+                severity="critical",
+            )
+        ])
+
+
+def test_between_is_rejected_for_boolean_technical_fields():
+    with pytest.raises(ValidationError, match="between can only be used with numeric"):
+        _criteria([_technical("has_audio", "between", [0, 1])])
+
+
+def test_audit_create_accepts_a_valid_project_criteria_spec():
+    from app.schemas.audit import AuditCreate
+
+    payload = AuditCreate.model_validate({
+        "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "content_type": "live_action",
+        "criteria_spec": {
+            "name": "1080p only",
+            "rules": [
+                _technical("height", "gte", 1080),
+            ],
+        },
+    })
+
+    assert payload.criteria_spec is not None
+    assert payload.criteria_spec.rules[0].field == "height"
+
+
+def test_audit_create_rejects_unsupported_criteria_fields():
+    from app.schemas.audit import AuditCreate
+
+    with pytest.raises(ValidationError):
+        AuditCreate.model_validate({
+            "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "criteria_spec": {
+                "rules": [
+                    _technical("arbitrary_path", "gte", 1),
+                ],
+            },
+        })
