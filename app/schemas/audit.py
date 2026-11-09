@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.services.youtube_urls import normalize_youtube_url, extract_video_id
+from app.schemas.criteria import CriteriaSpec
 
 
 class ContentType(str, Enum):
@@ -84,6 +85,7 @@ class AuditCreate(BaseModel):
 
     youtube_url: str = Field(min_length=11, max_length=2048, description="Публичная ссылка на видео YouTube")
     content_type: ContentType = Field(default=ContentType.UNKNOWN, description="Тип контента; для мультфильмов выберите animation")
+    criteria_spec: CriteriaSpec | None = Field(default=None, description="Необязательный набор критериев проекта")
 
     @field_validator("youtube_url")
     @classmethod
@@ -135,5 +137,9 @@ class AuditResponse(BaseModel):
     technical_findings: list[dict] | None = None
     visual_metadata: dict | None = None
     visual_findings: list[dict] | None = None
+    criteria_spec: dict | None = None
+    criteria_results: dict | None = None
+    decision: Literal["APPROVE", "REVIEW", "REJECT"] | None = None
+    decision_summary: str | None = None
     markup_comment: str | None = None
     error_message: str | None = None
