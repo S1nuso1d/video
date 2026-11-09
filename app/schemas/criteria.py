@@ -36,7 +36,12 @@ class CriteriaRule(BaseModel):
     field: str | None = Field(default=None, max_length=64)
     operator: str
     value: Any = None
-    code: str | None = Field(default=None, min_length=2, max_length=96)
+    code: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=96,
+        pattern=r"^[a-z][a-z0-9_]+$",
+    )
     description: str = Field(default="", max_length=300)
 
     @model_validator(mode="after")
@@ -55,6 +60,8 @@ class CriteriaRule(BaseModel):
 
             field_type = TECHNICAL_FIELD_TYPES[self.field]
             if self.operator == "between":
+                if field_type != "number":
+                    raise ValueError("between can only be used with numeric fields")
                 if (
                     not isinstance(self.value, list)
                     or len(self.value) != 2
@@ -83,6 +90,8 @@ class CriteriaRule(BaseModel):
             raise ValueError("visual and semantic rules require code")
 
         if self.type == "visual":
+            if self.severity == "critical":
+                raise ValueError("OpenCV visual signals are advisory; use warning or info severity")
             if self.operator not in {
                 "finding_present", "finding_absent", "max_duration"
             }:
