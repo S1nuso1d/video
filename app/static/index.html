@@ -63,28 +63,28 @@ if(technical){
  const resolution=v.width&&v.height?(v.width+" × "+v.height):"—";
  const fps=Number.isFinite(v.frame_rate)?(v.frame_rate.toFixed(2)+" FPS"):"FPS unavailable";
  const codec=v.codec||"codec unknown";
- const audioText=technical.has_audio?"Audio: "+audio.map(x=>x.codec||"unknown").join(", "):"No audio stream";
+ const audioText=technical.has_audio?"Аудио: "+audio.map(x=>x.codec||"неизвестно").join(", "):"Аудиодорожка отсутствует";
  technicalTags.append(
-  node("span","tag","Duration: "+duration),
-  node("span","tag","Resolution: "+resolution),
+  node("span","tag","Длительность: "+duration),
+  node("span","tag","Разрешение: "+resolution),
   node("span","tag",fps),
-  node("span","tag","Video: "+codec),
+  node("span","tag","Видеокодек: "+codec),
   node("span","tag",audioText)
  );
- if(Number.isFinite(technical.file_size_bytes))technicalTags.append(node("span","tag","File: "+(technical.file_size_bytes/1048576).toFixed(1)+" MB"));
- result.append(node("div","section-title","Technical metadata · FFprobe"),technicalTags);
+ if(Number.isFinite(technical.file_size_bytes))technicalTags.append(node("span","tag","Размер файла: "+(technical.file_size_bytes/1048576).toFixed(1)+" МБ"));
+ result.append(node("div","section-title","Технические параметры · FFprobe"),technicalTags);
 }
 if(technicalFindings.length){
- result.append(node("div","section-title","Technical observations"));
+ result.append(node("div","section-title","Технические наблюдения"));
  const technicalList=node("div","defects");
- const technicalLabels={video_under_5_seconds:"Video shorter than 5 seconds",audio_stream_missing:"Audio stream not found",frame_rate_unavailable:"Frame rate unavailable",ffprobe_unavailable:"FFprobe unavailable"};
+ const technicalLabels={video_under_5_seconds:"Видео короче 5 секунд",audio_stream_missing:"Аудиодорожка не найдена",frame_rate_unavailable:"Не удалось определить FPS",ffprobe_unavailable:"FFprobe недоступен"};
  technicalFindings.forEach(f=>{
   const card=node("article","defect"),top=node("div","defect-top"),name=node("div");
-  name.append(node("div","defect-name",technicalLabels[f.code]||f.code||"Technical observation"));
+  name.append(node("div","defect-name",technicalLabels[f.code]||f.code||"Техническое наблюдение"));
   top.append(name,node("span","tag"+(f.severity==="critical"?" critical":""),f.severity||"observation"));
   card.append(top);
   if(f.description)card.append(node("div","defect-desc",f.description));
-  if(f.evidence&&typeof f.evidence.duration_seconds==="number")card.append(node("div","defect-time","Measured duration: "+f.evidence.duration_seconds.toFixed(3)+" sec"));
+  if(f.evidence&&typeof f.evidence.duration_seconds==="number")card.append(node("div","defect-time","Измеренная длительность: "+f.evidence.duration_seconds.toFixed(3)+" сек"));
   technicalList.append(card);
  });
  result.append(technicalList);
