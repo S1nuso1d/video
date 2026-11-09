@@ -88,6 +88,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_worker_lease_settings(self):
+        if self.workspace_access_key and len(self.workspace_access_key.strip()) < 32:
+            raise ValueError("WORKSPACE_ACCESS_KEY must contain at least 32 characters")
         if self.worker_heartbeat_seconds < 1:
             raise ValueError("WORKER_HEARTBEAT_SECONDS must be at least 1")
         if self.worker_lease_timeout_seconds < self.worker_heartbeat_seconds * 3:
