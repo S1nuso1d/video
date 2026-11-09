@@ -182,6 +182,11 @@ All settings are loaded from `.env`.
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini model |
 | `GEMINI_TIMEOUT_MS` | `180000` | HTTP request timeout in milliseconds |
 | `GEMINI_RETRY_ATTEMPTS` | `3` | SDK attempts, including the first |
+| `GEMINI_INPUT_PRICE_USD_PER_MILLION` | `0.75` | Configured paid-tier input rate per 1M tokens |
+| `GEMINI_CACHED_INPUT_PRICE_USD_PER_MILLION` | `0.075` | Configured cached input rate per 1M tokens |
+| `GEMINI_OUTPUT_PRICE_USD_PER_MILLION` | `3.75` | Configured output rate per 1M tokens, including thinking |
+| `GEMINI_PRICING_VERSION` | `2026-11-standard-paid` | Rate-card identifier saved with usage data |
+| `GEMINI_USD_TO_RUB_RATE` | `0` | Optional USD-to-RUB conversion rate; 0 disables RUB estimate |
 | `YT_DLP_BINARY` | `yt-dlp` | Downloader executable |
 | `VIDEO_TEMP_ROOT` | `storage/temp` | Temporary video root |
 | `VIDEO_FORMAT` | `bv+ba/b` | yt-dlp format selector; downloads the best available source rendition without a 720p ceiling |
@@ -275,7 +280,7 @@ Example create-audit request:
 
 Technical fields are allow-listed; arbitrary Python paths or expressions are not accepted. `between` takes a two-item `value` array, for example `[30, 180]`. Visual `max_duration` uses seconds in `value`. Semantic codes must match the existing Gemini `DefectCategory` values. If no `criteria_spec` is supplied, the project decision remains `null` and the original SFT report flow is unchanged.
 
-**Resolution note:** the default yt-dlp selector is `bv*+ba/b`, so the worker no longer caps the download at 720p before checking the source. If your existing local `.env` contains the old `VIDEO_FORMAT=bv*[height<=720]+ba/b[height<=720]/b`, update that one line to `VIDEO_FORMAT=bv*+ba/b` manually; do not overwrite your `.env` or copy over API keys.
+**Resolution note:** the default yt-dlp selector is `bv+ba/b`, so the worker no longer caps the download at 720p before checking the source. If your existing local `.env` contains the old `VIDEO_FORMAT=bv*[height<=720]+ba/b[height<=720]/b`, update that one line to `VIDEO_FORMAT=bv+ba/b` manually; do not overwrite your `.env` or copy over API keys.
 
 ## Gemini cost and processing observability
 
