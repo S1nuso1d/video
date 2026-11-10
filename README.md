@@ -1,201 +1,344 @@
-# Video Auditor — предварительная проверка видео по SFT Stage 1
+# Video Auditor — shared video analysis workspace
 
-Приложение на **Python + FastAPI + PostgreSQL + Gemini API**. Оно принимает публичную ссылку YouTube, ставит аудит в очередь PostgreSQL, отдельный worker отправляет ссылку и строгий русскоязычный чек-лист в Gemini API, затем сохраняет результат с дефектами, ориентировочными временными метками и коротким комментарием.
+Video Auditor is a team tool for preliminary video-quality analysis against a project's own criteria. It accepts a public YouTube URL, queues a background job, downloads the source, runs deterministic technical and frame checks, asks Google Gemini for a structured visual/audio assessment, evaluates an optional project rubric, and stores a shareable result.
 
-> **Важно:** отчёт предварительный. Мультимодальная модель может пропустить короткие дефекты, неверно оценить качество звука/изображения или дать неточную временную метку. Приложение не является сертифицированным детектором артефактов и не должно использоваться для автоматической отправки разметки без разрешения владельца процесса и ручной проверки.
+The product is intentionally a shared analysis workspace, not a user-management platform. There are no admin/operator/reviewer accounts, invitations, per-user permissions, or admin dashboard. Everyone who can access the workspace sees the same audit history and review queue.
 
-## Что реализовано
+> Important: results are preliminary evidence, not a certified technical measurement or a guarantee that every defect has been found. Human inspection against the source material remains necessary for consequential decisions.
 
-- Веб-интерфейс в корне `/`: создание аудита, история проверок, автоматическое обновление статуса и просмотр отчёта. API-документация — в `/docs`.
-- FastAPI: создание аудита, просмотр состояния и истории; Swagger UI в `/docs`.
-- PostgreSQL + SQLAlchemy 2.x.
-- Alembic: первая миграция для таблицы `audit_records`.
-- Отдельный процесс worker, который забирает задания из PostgreSQL с блокировкой строки; задания не исполняются внутри HTTP-запроса.
-- Прямая передача публичного URL YouTube в Gemini API. **Загрузчика `yt-dlp` намеренно нет**: прямой URL-input проще для прототипа и не требует скачивать ролик. Функция URL YouTube в Gemini API обозначена Google как Preview; ограничения, доступность и тарификация могут меняться.
-- Pydantic-схемы для структурированного JSON-ответа Gemini.
-- Консервативная постобработка: если покрытие проверки ограничено, есть низкая уверенность или сомнительная причина — вердикт переводится в `manual_review_required`.
-- Чек-лист SFT Stage 1, включая особенности анимации, аудио и правило о доле дефекта менее 20%.
-- Базовые unit-тесты без подключения к API и PostgreSQL.
+## Product capabilities
 
-## Требования
+- Submit a YouTube URL, select the content type, and optionally supply project-specific technical, visual, and semantic criteria.
+- Track queued/running/cancelled/completed/failed jobs and see the current processing stage.
+- Cancel a queued or running job; the worker stops at cooperative checkpoints and cleans temporary files.
+- Inspect FFprobe metadata and technical observations separately from AI findings.
+- Inspect OpenCV sampling statistics, timestamped visual observations, and small frame previews.
+- Read the structured Gemini verdict, summary, detected defects, confidence, timestamps, and SFT annotation comment.
+- See the criteria-engine decision (APPROVE, REVIEW, REJECT) without overwriting the original Gemini verdict.
+- Record a shared team decision (approved, rejected, or needs_changes) with a comment; the decision history is append-only.
+- Copy a direct link to a particular audit. Teammates open it inside the same workspace and use the same workspace key, if one is configured.
+- View estimated Gemini usage/cost and per-stage processing timings.
+- Use the REST API or Swagger documentation at /docs to integrate the analysis engine with an existing company website or internal system.
 
-- Python 3.11 или новее.
-- Docker Desktop (для быстрого запуска PostgreSQL) либо локальный PostgreSQL.
-- Gemini API key из [Google AI Studio](https://aistudio.google.com/apikey).
-- Доступ к публичному видео YouTube, которое можно отправлять в API для анализа.
+The web interface is a lightweight workspace for the analysis engine. It does not attempt to replace an existing corporate portal, identity provider, or workflow application.
 
-## Запуск на Windows (PowerShell)
+## Shared access
 
-### 1. Распакуйте проект и откройте папку
+WORKSPACE_ACCESS_KEY is an optional shared key (minimum 32 characters), not an account system.
 
-```powershell
-cd .\video_auditor_project
-```
+- For development on a private localhost machine, leave it empty.
+- For a shared server, generate one random key and configure it in the server's .env.
+- Give that same key to authorized teammates through a secure channel. The browser stores it in the current tab's sessionStorage and sends it as Authorization: Bearer WORKSPACE_ACCESS_KEY.
+- Everyone with the key has the same access to every audit and can submit/cancel jobs and record team review decisions. The application does not identify individual team members.
+- If the key is empty, API endpoints are not protected by this key. Do not expose such an instance to an untrusted network.
 
-### 2. Создайте `.env`
+Generate a key:
 
-```powershell
-Copy-Item .env.example .env
-notepad .env
-```
+~~~powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+~~~
 
-Впишите действительный `GEMINI_API_KEY`. Не публикуйте `.env` и не отправляйте ключ в GitHub.
+For direct browser integration from an existing company portal, set CORS_ALLOWED_ORIGINS to a JSON array of exact origins, for example ["https://portal.example.com"]. Server-to-server API calls do not need browser CORS. Use HTTPS, keep the key private, and put rate limiting and appropriate network restrictions in front of any externally accessible deployment. A shared key is deliberately simpler than per-user authentication; it is not tenant isolation and cannot provide individual accountability.
 
-### 3. Запустите PostgreSQL через Docker
+Audit links contain an audit ID, not an access credential. A teammate still needs the workspace key if the server requires one.
 
-```powershell
-docker compose up -d postgres
-```
+## Processing workflow
 
-Проверьте, что контейнер поднялся:
+~~~text
+Browser / existing company system
+             |
+             v
+        FastAPI API
+             |
+             v
+      PostgreSQL queue
+             |
+             v
+       Worker claims job
+       (row lock + lease)
+             |
+             v
+         yt-dlp download
+             |
+       +-----+------+
+       |            |
+       v            v
+     FFprobe      OpenCV
+  metadata and   frame sampling
+  tech findings  and visual signals
+       |            |
+       +-----+------+
+             |
+             v
+   Gemini video assessment
+   (public YouTube URI by default)
+             |
+             v
+   Criteria engine + structured report
+             |
+             v
+   Save result and processing metrics
+             |
+             v
+   Delete temporary source files
+~~~
 
-```powershell
-docker compose ps
-```
+The worker downloads the source locally for FFprobe and OpenCV. With GEMINI_YOUTUBE_DIRECT=true, Gemini receives the public YouTube URL directly, so the same local file is not uploaded a second time through Gemini Files. Google documents this direct YouTube input as a preview feature; it requires a video publicly accessible to Google. Set the option to false to use the local downloaded file with Gemini Files instead.
 
-Если Docker не установлен, создайте PostgreSQL базу вручную и поправьте `DATABASE_URL` в `.env`.
+## API endpoints
 
-### 4. Установите зависимости в виртуальное окружение
+All workspace endpoints are under /api/v1. When WORKSPACE_ACCESS_KEY is set, send it in the Bearer header.
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | /api/v1/audits | Create and queue a video analysis |
+| GET | /api/v1/audits | List the shared audit history |
+| GET | /api/v1/audits/{audit_id} | Retrieve one report/status |
+| POST | /api/v1/audits/{audit_id}/cancel | Cancel a queued/running analysis |
+| GET | /api/v1/reviews/queue | List results waiting for team review |
+| POST | /api/v1/reviews/{audit_id}/decision | Record a team decision |
+| POST | /api/v1/reviews/{audit_id}/reopen | Reopen a completed team decision |
+| GET | /api/v1/reviews/{audit_id}/history | Retrieve append-only decision history |
+| GET | /health | Health check (public) |
 
-Если в системе нет Python 3.12, можно использовать другой Python >=3.11.
+There are no auth-token, user-provisioning, account-role, reviewer-assignment, admin-dashboard, or admin-CSV endpoints in this workspace version.
 
-### 5. Создайте таблицы через Alembic
+Example request:
 
-```powershell
-alembic upgrade head
-```
-
-### 6. Запустите API
-
-В первом окне PowerShell:
-
-```powershell
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Откройте интерфейс `http://127.0.0.1:8000/` или API-документацию `http://127.0.0.1:8000/docs`.
-
-### 7. Запустите worker
-
-Во втором окне PowerShell, в той же папке и с активированным окружением:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-python -m app.worker
-```
-
-Worker читает задания из PostgreSQL и проводит анализ. Если worker не запущен, задания останутся в статусе `pending`.
-
-## Запуск через Docker Compose
-
-Для запуска всех компонентов контейнерами сначала заполните `.env`, затем выполните:
-
-```powershell
-docker compose up --build
-```
-
-Интерфейс будет доступен на `http://localhost:8000/`, API-документация — на `http://localhost:8000/docs`. Сервисы `api` и `worker` используют один образ, но выполняют разные команды. Первый запуск может занять время на сборку и установку зависимостей.
-
-## Пример использования API
-
-### Создать задание
-
-```powershell
+~~~powershell
+$headers = @{ Authorization = "Bearer $env:WORKSPACE_ACCESS_KEY" }
 $body = @{
   youtube_url = "https://www.youtube.com/watch?v=VIDEO_ID"
-  content_type = "unknown"
-} | ConvertTo-Json
+  content_type = "live_action"
+} | ConvertTo-Json -Depth 20
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/audits" -Headers $headers -ContentType "application/json" -Body $body
+~~~
 
-Invoke-RestMethod -Method Post `
-  -Uri "http://127.0.0.1:8000/api/v1/audits" `
-  -ContentType "application/json" `
-  -Body $body
-```
+## Project criteria
 
-`content_type` принимает `unknown`, `live_action` или `animation`. Для мультфильмов выбирайте `animation`, чтобы применялись дополнительные правила анимации.
+Each audit can receive a criteria_spec object. It is validated before the job is queued and stored with that audit, allowing different projects to use different rubrics without changing Python code. The current UI accepts the rubric as JSON; saved named profiles and a form-based criteria builder are future product improvements.
 
-Ответ содержит `id`. Проверяйте статус:
+Supported rule types:
 
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/audits/ID_ИЗ_ОТВЕТА"
-```
+- technical: FFprobe measurements (duration_seconds, file_size_bytes, width, height, frame_rate, has_audio, video_codec, format_name, video_bit_rate, container_bit_rate, audio_stream_count). Operators: eq, neq, gt, gte, lt, lte, between, in, not_in.
+- visual: sampled OpenCV signals by code, using finding_present, finding_absent, or max_duration.
+- semantic: Gemini defect categories using defect_present or defect_absent. Semantic rules remain unknown unless Gemini reports adequate preliminary review coverage; uncertain/low-confidence matches also remain unknown.
 
-Статусы задания: `pending`, `processing`, `completed`, `failed`.
+Rule severity is critical, warning, or info. A failed critical rule produces REJECT; other failures and any unknown result produce REVIEW; APPROVE is returned only when every configured rule passes. Missing technical or visual measurements are not silently treated as a pass. The result is stored in decision, decision_summary, and criteria_results; the original Gemini verdict remains unchanged.
 
-Вердикты отчёта:
+Example rubric: examples/criteria/outdoor_video.json.
 
-- `candidate_accepted` — предварительно подходит;
-- `candidate_rejected` — предварительно не подходит;
-- `manual_review_required` — недостаточно надёжных свидетельств, нужна ручная проверка.
+Example create-audit request:
 
-### Основные endpoints
+~~~json
+{
+  "youtube_url": "https://www.youtube.com/watch?v=VIDEO_ID",
+  "content_type": "live_action",
+  "criteria_spec": {
+    "name": "Outdoor people videos",
+    "version": "1.0",
+    "rules": [
+      {
+        "id": "minimum_height",
+        "type": "technical",
+        "field": "height",
+        "operator": "gte",
+        "value": 1080,
+        "severity": "critical"
+      },
+      {
+        "id": "no_watermark",
+        "type": "semantic",
+        "code": "watermark_or_overlay",
+        "operator": "defect_absent",
+        "severity": "critical"
+      }
+    ]
+  }
+}
+~~~
 
-- `GET /health` — проверка доступности API.
-- `POST /api/v1/audits` — создать задание.
-- `GET /api/v1/audits/{audit_id}` — получить состояние и отчёт.
-- `GET /api/v1/audits?limit=20&offset=0` — история заданий.
-- `GET /docs` — Swagger UI.
+Technical fields are allow-listed; arbitrary Python paths or expressions are not accepted. between takes a two-item value array such as [30, 180]. Visual max_duration uses seconds. Semantic codes must match the existing Gemini DefectCategory values.
 
-## Конфигурация
+## Local setup (Windows PowerShell)
 
-Все настройки находятся в `.env`:
+Requirements: Python 3.11+, Docker Desktop with Compose (or PostgreSQL), Node.js for frontend syntax validation, FFmpeg/FFprobe, and a Gemini API key.
 
-| Переменная | Значение по умолчанию | Назначение |
-|---|---|---|
-| `DATABASE_URL` | локальная PostgreSQL в Docker Compose | Строка подключения SQLAlchemy |
-| `GEMINI_API_KEY` | пусто | Ключ Gemini API |
-| `GEMINI_TIMEOUT_MS` | `180000` | Сетевой тайм-аут одного запроса в миллисекундах |
-| `GEMINI_RETRY_ATTEMPTS` | `3` | Максимум попыток запроса, включая первую |
-| `GEMINI_RETRY_INITIAL_DELAY` / `GEMINI_RETRY_MAX_DELAY` | `1` / `8` | Начальная и максимальная задержка повторов в секундах |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | Модель Gemini |
-| `WORKER_POLL_SECONDS` | `2` | Интервал опроса очереди |
-| `STALE_JOB_MINUTES` | `240` | Возврат зависших заданий в очередь |
-| `LOG_LEVEL` | `INFO` | Уровень логирования |
+1. Clone the repository and enter it:
 
-При желании поменяйте модель в `.env`, если Google изменит доступные модели или доступ к Preview-функциям.
+~~~powershell
+git clone https://github.com/S1nuso1d/video.git
+cd video
+~~~
 
-## Что именно учитывает чек-лист
+2. Create the local environment file once:
 
-Чек-лист основан на присланных правилах SFT Stage 1: наложенные надписи/водяные знаки, коллажи, диагональные/необычные рамки, неясное содержание, чрезмерная тряска, частые склейки менее 5 секунд, блочность/пикселизация/постеризация, сильное размытие, закрывающие объект капли, двойная экспозиция, отражение/переворот, гостинг, искажение цвета, пересвет/чрезмерная темнота, смена скорости, деформированное соотношение сторон, стробинг/низкий FPS, эффект старой плёнки, артефакты сжатия, слайд-шоу и искусственная вклейка на фон.
+~~~powershell
+Copy-Item .env.example .env
+notepad .env
+~~~
 
-Также проверяются низкая динамика, источники и качество звука, громкий закадровый голос, дублирование аудио/эхо, рассинхронизация, а для анимации — анатомия, соответствие артикуляции звуку, плоская 2D-графика в реалистичной анимации и эстетическая цельность. Кулинарные видео в общем случае исключены инструкцией, но отдельное уточнение для анимации разрешает сцены готовки в анимации.
+Set GEMINI_API_KEY. Do not commit .env, and do not overwrite an existing .env when updating the project. For shared access, set WORKSPACE_ACCESS_KEY on the server; for localhost-only development it can remain blank.
 
-## Известные ограничения
+3. Install FFmpeg and ensure both executables are on PATH. Verify:
 
-1. Прямая передача YouTube URL в Gemini API находится в Preview. Частное, возрастное, ограниченное по региону или недоступное видео может не обработаться.
-2. API не предоставляет этому приложению покадровое доказательство того, что проверен каждый момент. Кратковременные артефакты и плохой звук могут быть пропущены.
-3. Временные метки, доля времени и качество доказательств оцениваются моделью и могут быть неточными. Перед рабочей разметкой сверяйте их с плеером.
-4. Автоматический вывод о том, что ролик создан ИИ, по одним визуальным признакам ненадёжен; при сомнениях требуется проверка человеком.
-5. Для временных ошибок Gemini (например, HTTP 503) настроены ограниченные повторы и тайм-аут запроса; после исчерпания повторов задание получает статус `failed` с понятным сообщением, а Worker переходит к следующей задаче. Если процесс Worker принудительно остановлен посреди анализа, задание может остаться в `processing`; после остановки Worker его можно повторно поставить в очередь командой из [START_HERE.md](START_HERE.md).
-6. Приложение не скачивает видео и не сохраняет его копию. Однако ссылка и содержание могут передаваться Google Gemini API; не отправляйте материалы, для обработки которых нет разрешения.
-7. В локальной/тестовой конфигурации нет пользовательской аутентификации. Не открывайте API в публичный интернет без аутентификации, лимитов запросов и настройки HTTPS.
-8. `worker` рассчитан на простой MVP. Для большого объёма заданий понадобятся мониторинг, отдельная очередь задач, метрики и политика повторных попыток.
+~~~powershell
+ffmpeg -version
+ffprobe -version
+~~~
 
-## Тесты
+4. Start PostgreSQL:
 
-```powershell
-pytest
-```
+~~~powershell
+docker compose up -d postgres
+docker compose ps
+~~~
 
-Тесты валидируют правила и формат ссылок, не обращаясь к Google API или базе данных.
+5. Create/activate a virtual environment and install dependencies:
 
-## Полезная документация
+~~~powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+~~~
 
-- [Gemini API: Video understanding](https://ai.google.dev/gemini-api/docs/video-understanding)
-- [Gemini API: Structured outputs](https://ai.google.dev/gemini-api/docs/structured-output)
-- [Gemini API: Models](https://ai.google.dev/gemini-api/docs/models)
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [SQLAlchemy](https://docs.sqlalchemy.org/)
-- [Alembic](https://alembic.sqlalchemy.org/)
+6. Apply database migrations:
 
+~~~powershell
+python -m alembic upgrade head
+python -m alembic current
+~~~
 
-## Быстрый запуск
+7. Start the API in one PowerShell window:
 
-Подробная памятка для ежедневного запуска на Windows находится в [START_HERE.md](START_HERE.md): команды PowerShell, адреса интерфейса, Swagger и решения частых проблем.
+~~~powershell
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+~~~
+
+8. Start the worker in a second PowerShell window:
+
+~~~powershell
+cd "C:\path\to\video"
+.\.venv\Scripts\Activate.ps1
+python -m app.worker
+~~~
+
+Open http://127.0.0.1:8000. OpenAPI docs are at http://127.0.0.1:8000/docs.
+
+## Configuration
+
+All settings load from .env.
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| DATABASE_URL | local Docker PostgreSQL | SQLAlchemy connection |
+| GEMINI_API_KEY | empty | Gemini API key |
+| WORKSPACE_ACCESS_KEY | empty | Optional shared team key |\n| CORS_ALLOWED_ORIGINS | [] | Explicit JSON list of browser origins allowed to call the API from an existing portal |
+| GEMINI_MODEL | gemini-3.8-flash | Gemini model |
+| GEMINI_YOUTUBE_DIRECT | true | Pass a public YouTube URL directly to Gemini; false uses Gemini Files |
+| GEMINI_TIMEOUT_MS | 180000 | Gemini HTTP request timeout in milliseconds |
+| GEMINI_RETRY_ATTEMPTS | 3 | SDK attempts including the first |
+| GEMINI_INPUT_PRICE_USD_PER_MILLION | 0.75 | Configured input rate |
+| GEMINI_CACHED_INPUT_PRICE_USD_PER_MILLION | 0.075 | Configured cached-input rate |
+| GEMINI_OUTPUT_PRICE_USD_PER_MILLION | 3.75 | Configured output rate (includes thinking tokens) |
+| GEMINI_PRICING_VERSION | 2026-11-standard-paid | Rate-card identifier stored with usage |
+| GEMINI_USD_TO_RUB_RATE | 0 | Optional conversion rate; 0 disables RUB estimate |
+| YT_DLP_BINARY | yt-dlp | Downloader executable |
+| VIDEO_TEMP_ROOT | storage/temp | Temporary video root |
+| VIDEO_FORMAT | bv+ba/b | Download the best available source rendition |
+| VIDEO_MAX_FILESIZE_BYTES | 1500000000 | Maximum download size |
+| VIDEO_DOWNLOAD_TIMEOUT_SECONDS | 900 | Download timeout |
+| FFPROBE_BINARY | ffprobe | FFprobe executable/path |
+| FFPROBE_TIMEOUT_SECONDS | 30 | Metadata extraction timeout |
+| FFPROBE_REQUIRED | false | Fail the audit if FFprobe is unavailable |
+| CV_ANALYSIS_REQUIRED | false | Fail the audit if OpenCV analysis cannot run |
+| CV_SAMPLE_INTERVAL_SECONDS | 0.5 | Target interval between sampled frames |
+| CV_MAX_SAMPLES | 1200 | Maximum number of frames sampled |
+| CV_ANALYSIS_TIMEOUT_SECONDS | 120 | OpenCV stage time budget |
+| CV_RESIZE_WIDTH | 320 | Maximum analysis-frame width |
+| CV_BLACK_LUMA_THRESHOLD | 16 | Grayscale threshold for dark pixels |
+| CV_BLACK_PIXEL_RATIO | 0.985 | Dark-pixel ratio for black-frame candidate |
+| CV_BLACK_MIN_DURATION_SECONDS | 0.75 | Minimum estimated black interval |
+| CV_FREEZE_MEAN_DIFF_THRESHOLD | 0.8 | Freeze-like frame difference threshold |
+| CV_FREEZE_CHANGED_PIXEL_RATIO | 0.002 | Maximum changed-pixel ratio |
+| CV_FREEZE_PIXEL_DELTA | 3 | Pixel delta considered changed |
+| CV_FREEZE_MIN_DURATION_SECONDS | 2.5 | Minimum freeze-like interval |
+| CV_SCENE_CHANGE_THRESHOLD | 0.65 | Scene-change candidate threshold |
+| CV_BLUR_FOCUS_THRESHOLD | 20 | Laplacian variance blur threshold |
+| CV_BLUR_MIN_DURATION_SECONDS | 1.5 | Minimum sustained low-focus interval |
+| CV_EVIDENCE_MAX_FRAMES | 8 | Maximum preview frames per audit |
+| CV_EVIDENCE_WIDTH | 240 | Preview frame width |
+| CV_EVIDENCE_JPEG_QUALITY | 45 | JPEG preview quality |
+| CV_EVIDENCE_MAX_BYTES_PER_FRAME | 12000 | Maximum encoded preview size |
+| AUDIT_MAX_ATTEMPTS | 2 | Maximum worker claims |
+| AUDIT_RETRY_DELAY_SECONDS | 30 | Base retry delay |
+| GEMINI_RATE_LIMIT_COOLDOWN_SECONDS | 120 | Queue cooldown after HTTP 429 |
+| WORKER_POLL_SECONDS | 2 | Queue polling interval |
+| WORKER_HEARTBEAT_SECONDS | 15 | Worker heartbeat interval |
+| WORKER_LEASE_TIMEOUT_SECONDS | 90 | Lease expiry threshold |
+| WORKER_RECOVERY_INTERVAL_SECONDS | 15 | Stale-lease recovery interval |
+
+The lease timeout must be at least three times the heartbeat interval.
+
+## Processing performance and diagnostics
+
+The API response includes processing_stage, processing_metrics, Gemini token usage, and estimated costs when provider usage data is available. The worker logs download, FFprobe, OpenCV, Gemini upload/preparation (when used), and Gemini interaction durations separately. The browser polls only the currently selected audit every five seconds.
+
+OpenCV currently targets one sample every 0.5 seconds, up to 1,200 samples, resized to 320 pixels wide. This is a bounded screening pass, not full frame-by-frame defect adjudication. A 120-second CV timeout is a safety limit, not an expected runtime. If the CV stage times out and CV_ANALYSIS_REQUIRED=false, the worker should preserve a warning and continue to Gemini; with the setting true, the timeout fails the audit. Check the worker log and the actual .env value when Gemini shows zero processing time.
+
+If the report says FFprobe is unavailable, install FFmpeg/FFprobe and restart the API/worker process so Windows PATH changes are visible. Until FFprobe is available, technical metadata and rules depending on it cannot be evaluated.
+
+The Gemini pricing values are configured estimates, not Google invoices. The output rate includes thinking tokens; thinking is shown separately for diagnostics and must not be charged twice. Update the rate card when the model, billing tier, or provider prices change. The rate-card identifier and usage metadata are stored with the audit.
+
+## Worker reliability
+
+Each claimed audit receives a worker ID, lease token, heartbeat timestamp, and attempt count. The worker refreshes its lease periodically in a separate thread. Recovery returns a stale job to the queue if the attempt budget remains; otherwise it fails. Lease tokens prevent a worker with an expired claim from overwriting a newer attempt.
+
+The worker cooperatively observes cancellation at stage boundaries and during supported subprocess/frame-processing waits. The current synchronous Gemini Interactions call cannot be forcefully interrupted mid-request; a cancellation requested during that call is applied after the call returns or times out, and its result is discarded.
+
+Temporary source files are isolated per audit and removed after processing. Worker startup also removes abandoned temporary directories from unclean shutdowns.
+
+## Expert-labelled calibration
+
+The offline calibration tool compares results with expert labels. It does not change production verdicts or fine-tune Gemini/OpenCV.
+
+Prepare UTF-8 JSONL with one sample per line. The included example is synthetic; meaningful metrics require independently reviewed real samples and an agreed defect taxonomy.
+
+~~~powershell
+python -m app.calibration_cli --input examples/calibration/example.jsonl --output reports/calibration.json --markdown reports/calibration.md
+~~~
+
+The evaluator reports the three-class verdict confusion matrix, accuracy, balanced accuracy, decision coverage, manual-review share, false-acceptance/rejection rates, and per-defect precision/recall/F1. It uses exact defect-code matching; taxonomy mappings must be explicit.
+
+## Tests
+
+~~~powershell
+python -m pytest
+python scripts/check_frontend.py
+~~~
+
+Tests cover API schemas, worker leases/cancellation, downloader cleanup, FFprobe parsing, OpenCV signals, criteria evaluation, Gemini usage/cost handling, and shared-workspace access/review. External YouTube and Gemini calls are mocked; passing automated tests does not prove live provider access or establish real-video processing time. Run an end-to-end test with a video the team is authorized to process after deployment.
+
+## Data compatibility
+
+This branch removes account and admin APIs and the corresponding UI. It does not drop legacy user_accounts tables or user-reference columns from the existing PostgreSQL schema. Those records are retained to avoid destructive migrations and preserve existing audit data. New audits are shared and are not assigned to individual users.
+
+## Limitations and responsible use
+
+1. Gemini does not guarantee that every frame or audio sample is inspected. Timestamps, duration estimates, and confidence can be inaccurate.
+2. Black/freeze/scene-change/blur signals are heuristic screening indicators. They can miss short events between samples or flag intentional dark/static scenes and motion as possible issues.
+3. Missing FFprobe metadata means technical measurements/rules cannot be evaluated. Missing evidence must not be treated as a pass.
+4. Source downloading must comply with platform terms, copyright, and the content owner's permissions. Process only material the team is authorized to analyze and share.
+5. JPEG evidence previews are stored in audit records and can contain source-video content. Apply a suitable database retention policy.
+6. A shared workspace key grants the same access to every team member who possesses it. Use appropriate network controls and HTTPS before team/public exposure.
+7. The PostgreSQL-backed worker is an MVP queue. High-volume deployments need monitoring, concurrency limits, operational alerting, and a deliberately managed job-queue architecture.
+
+## Useful documentation
+
+- FFmpeg / FFprobe: https://ffmpeg.org/ffprobe.html
+- Gemini video understanding: https://ai.google.dev/gemini-api/docs/video-understanding
+- Gemini structured outputs: https://ai.google.dev/gemini-api/docs/structured-output
+- FastAPI: https://fastapi.tiangolo.com/
+- SQLAlchemy: https://docs.sqlalchemy.org/
+- Alembic: https://alembic.sqlalchemy.org/

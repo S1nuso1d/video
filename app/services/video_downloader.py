@@ -1,3 +1,6 @@
+"""Download and clean up source videos for one audit attempt."""
+
+import os
 import re
 import shutil
 import subprocess
@@ -5,9 +8,11 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 
 from app.core.config import settings
+from app.services.cancellation import AuditCancelled
 
 
 class VideoDownloadError(RuntimeError):
@@ -58,8 +63,47 @@ def validate_video_url(url: str) -> None:
         raise VideoDownloadError("Некорректная ссылка на видео.")
 
 
-def download_video(url: str, audit_id: str) -> DownloadedVideo:
-    """Download one video into an isolated temporary directory using yt-dlp."""
+def _stop_process(process: subprocess.Popen | None) -> None:
+    if process is None or process.poll() is not None:
+        return
+
+    # On Windows yt-dlp can spawn ffmpeg for merging separate audio/video
+    # streams. Terminate the whole process tree so cancellation does not leave
+    # a detached ffmpeg process consuming CPU or holding the temporary file.
+    process_id = getattr(process, "pid", None)
+    if os.name == "nt" and process_id is not None:
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process_id), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            try:
+                process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+            return
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    process.terminate()
+    try:
+        process.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+
+
+def download_video(
+    url: str,
+    audit_id: str,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+) -> DownloadedVideo:
+    """Download one source video and remain responsive to cancellation requests."""
     validate_video_url(url)
     if shutil.which(settings.yt_dlp_binary) is None:
         raise VideoDownloadError(
@@ -72,7 +116,10 @@ def download_video(url: str, audit_id: str) -> DownloadedVideo:
         settings.yt_dlp_binary,
         "--no-playlist",
         "--no-progress",
-        "--newline",
+        "--quiet",
+        "--no-warnings",
+        "--concurrent-fragments",
+        "8",
         "--max-filesize",
         str(settings.video_max_filesize_bytes),
         "-f",
@@ -81,35 +128,71 @@ def download_video(url: str, audit_id: str) -> DownloadedVideo:
         output_template,
         url,
     ]
+    process: subprocess.Popen | None = None
     try:
-        completed = subprocess.run(
+        if cancel_check is not None:
+            cancel_check()
+        process = subprocess.Popen(
             command,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=settings.video_download_timeout_seconds,
-            check=False,
+            encoding="utf-8",
+            errors="replace",
         )
-    except subprocess.TimeoutExpired as exc:
+        deadline = time.monotonic() + max(
+            1, int(settings.video_download_timeout_seconds)
+        )
+        output = ""
+        while True:
+            if cancel_check is not None:
+                cancel_check()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _stop_process(process)
+                raise VideoDownloadError(
+                    "Превышено время ожидания скачивания видео."
+                )
+            try:
+                output, _ = process.communicate(timeout=min(1.0, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
+
+        if process.returncode != 0:
+            details = (output or "").strip().splitlines()
+            tail = details[-1] if details else "unknown error"
+            raise VideoDownloadError(
+                f"yt-dlp не смог скачать видео: {tail[:300]}"
+            )
+
+        if cancel_check is not None:
+            cancel_check()
+
+        files = sorted(path for path in work_dir.iterdir() if path.is_file())
+        if not files:
+            raise VideoDownloadError(
+                "yt-dlp завершился без создания видеофайла."
+            )
+
+        video_path = max(files, key=lambda path: path.stat().st_size)
+        if video_path.stat().st_size <= 0:
+            raise VideoDownloadError("Скачанный видеофайл пуст.")
+
+        return DownloadedVideo(path=video_path, work_dir=work_dir)
+    except AuditCancelled:
+        _stop_process(process)
         cleanup_audit_temp_dir(work_dir)
-        raise VideoDownloadError("Превышено время ожидания скачивания видео.") from exc
+        raise
+    except VideoDownloadError:
+        _stop_process(process)
+        cleanup_audit_temp_dir(work_dir)
+        raise
     except OSError as exc:
+        _stop_process(process)
         cleanup_audit_temp_dir(work_dir)
         raise VideoDownloadError("Не удалось запустить yt-dlp.") from exc
-
-    if completed.returncode != 0:
+    except Exception:
+        _stop_process(process)
         cleanup_audit_temp_dir(work_dir)
-        details = (completed.stderr or completed.stdout or "").strip().splitlines()
-        tail = details[-1] if details else "unknown error"
-        raise VideoDownloadError(f"yt-dlp не смог скачать видео: {tail[:300]}")
-
-    files = sorted(path for path in work_dir.iterdir() if path.is_file())
-    if not files:
-        cleanup_audit_temp_dir(work_dir)
-        raise VideoDownloadError("yt-dlp завершился без создания видеофайла.")
-
-    video_path = max(files, key=lambda path: path.stat().st_size)
-    if video_path.stat().st_size <= 0:
-        cleanup_audit_temp_dir(work_dir)
-        raise VideoDownloadError("Скачанный видеофайл пуст.")
-
-    return DownloadedVideo(path=video_path, work_dir=work_dir)
+        raise

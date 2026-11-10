@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.api.v1.api import api_router
@@ -13,11 +14,18 @@ UI_FILE = Path(__file__).parent / "static" / "index.html"
 
 app = FastAPI(
     title=settings.project_name,
-    version="0.2.0",
+    version="0.7.0",
     description=(
-        "Предварительная проверка публичных YouTube-видео по SFT Stage 1. "
+        "Инструмент командного анализа публичных YouTube-видео по критериям проекта. "
         "Результаты не заменяют ручную проверку."
     ),
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Accept", "Authorization", "Content-Type"],
 )
 app.include_router(api_router, prefix="/api/v1")
 
@@ -29,5 +37,5 @@ def health() -> dict[str, str]:
 
 @app.get("/", include_in_schema=False)
 def root() -> FileResponse:
-    """Serve the lightweight web interface; APIs remain under /api/v1."""
+    """Serve the lightweight workspace UI; the API can also be integrated elsewhere."""
     return FileResponse(UI_FILE, media_type="text/html")

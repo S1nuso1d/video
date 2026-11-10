@@ -1,64 +1,332 @@
 <!doctype html>
-<html lang="ru"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0a1020">
-<title>Video Auditor — SFT Stage 1</title>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a1020">
+<title>Video Auditor — анализ видео</title>
 <style>
-:root{color-scheme:dark;--bg:#0a1020;--panel:rgba(19,28,49,.9);--line:rgba(166,184,219,.15);--text:#f1f5ff;--muted:#9aa9c4;--accent:#79e3c4;--danger:#ff8f9b;--warning:#f7c66d;--success:#79e3ad;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+:root{color-scheme:dark;--bg:#0a1020;--panel:#131c31e8;--line:#a6b8db26;--text:#f1f5ff;--muted:#9aa9c4;--accent:#79e3c4;--danger:#ff8f9b;--warning:#f7c66d;--success:#79e3ad;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(850px 520px at 8% -8%,#19314d,transparent 70%),radial-gradient(650px 450px at 100% 0%,#102b32,transparent 72%),var(--bg)}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.6;cursor:wait}.shell{max-width:1200px;margin:auto;padding:28px 22px 44px}
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:26px}.brand{display:flex;align-items:center;gap:12px}.logo{width:46px;height:46px;display:grid;place-items:center;border:1px solid #36594f;border-radius:15px;background:#16352f;color:var(--accent)}.logo svg{width:26px}.brand h1{margin:0;font-size:18px;letter-spacing:-.03em}.brand p{margin:4px 0 0;color:var(--muted);font-size:12px}.actions{display:flex;align-items:center;gap:10px}.api-state{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);border-radius:99px;color:var(--muted);font-size:12px}.dot{width:7px;height:7px;border-radius:50%;background:var(--warning)}.dot.online{background:var(--success)}.link-button,.secondary,.primary{min-height:40px;border-radius:11px;padding:10px 14px;border:1px solid var(--line);color:var(--text);background:#ffffff08;font-size:12px}.link-button:hover,.secondary:hover{border-color:#477d6e;background:#79e3c410;text-decoration:none}.primary{border:0;color:#06251d;font-weight:750;background:linear-gradient(135deg,#8cf0d3,#4acba8)}.primary:hover{filter:brightness(1.05)}
-.hero{margin-bottom:22px;padding:24px 27px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(115deg,#1b2b45ee,#101d2fca)}.eyebrow{color:var(--accent);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.16em}.hero h2{margin:9px 0 7px;font-size:clamp(24px,3vw,34px);letter-spacing:-.04em}.hero p{max-width:760px;margin:0;color:#b3c0d6;font-size:14px;line-height:1.65}.layout{display:grid;grid-template-columns:minmax(300px,.82fr) minmax(0,1.3fr);gap:18px;align-items:start}.column{display:grid;gap:18px;min-width:0}.panel{min-width:0;border:1px solid var(--line);border-radius:19px;background:var(--panel);box-shadow:0 14px 45px #0002;overflow:hidden}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:19px 20px 0}.panel-head h3{margin:0;font-size:15px}.sub{margin-top:5px;color:var(--muted);font-size:12px}.panel-body{padding:19px 20px 21px}.field{display:grid;gap:8px;margin-bottom:16px}.field label{font-size:12px;color:#c5d0e4;font-weight:700}.field small{font-size:11px;line-height:1.5;color:var(--muted)}.input,.select{width:100%;min-height:45px;padding:12px;border-radius:11px;border:1px solid #a6b8db30;outline:0;color:var(--text);background:#050a1688}.input::placeholder{color:#677791}.input:focus,.select:focus{border-color:#79e3c4b3;box-shadow:0 0 0 3px #79e3c414}.select{color-scheme:dark}.primary.full{width:100%;font-size:13px}.note{margin-top:14px;padding:11px 12px;border:1px solid #f7c66d30;border-radius:10px;color:#c5b897;background:#f7c66d0b;font-size:11px;line-height:1.55}.message{display:none;margin-top:13px;padding:11px 12px;border-radius:10px;font-size:12px;line-height:1.5}.message.show{display:block}.message.error{border:1px solid #ff8f9b40;color:#ffc0c6;background:#ff8f9b10}.message.info{border:1px solid #79e3c433;color:#b5f0dd;background:#79e3c40d}
-.history{display:grid;gap:8px}.history-item{width:100%;display:flex;align-items:center;gap:11px;text-align:left;padding:11px;border:1px solid transparent;border-radius:12px;color:var(--text);background:#ffffff06}.history-item:hover{background:#ffffff0b}.history-item.active{border-color:#79e3c45c;background:#79e3c40d}.h-icon{display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;border-radius:10px;background:#8299c01c;color:#b8c9e7}.h-icon svg{width:18px}.h-info{min-width:0;flex:1}.h-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:750}.h-meta{margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--muted);font-size:10px}
-.pill,.tag{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:5px 8px;font-size:10px;font-weight:750;border:1px solid var(--line);color:#c5d0e4;background:#ffffff08}.pill.completed,.pill.accepted{color:var(--success);border-color:#79e3ad40;background:#79e3ad10}.pill.failed,.pill.rejected,.tag.critical{color:var(--danger);border-color:#ff8f9b40;background:#ff8f9b0c}.pill.manual,.tag.uncertain{color:var(--warning);border-color:#f7c66d40;background:#f7c66d0c}.count{display:grid;place-items:center;min-width:23px;height:23px;padding:0 6px;border-radius:7px;border:1px solid var(--line);color:var(--muted);font-size:11px}
-.empty{padding:24px 12px;text-align:center;color:var(--muted);font-size:12px;line-height:1.6}.empty-mark{display:grid;place-items:center;width:48px;height:48px;margin:0 auto 12px;border-radius:14px;background:#8299c01c;color:#96abc9}.empty-mark svg{width:24px}.result-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}.result-head h3{margin:0;font-size:16px}.result-url{display:inline-block;margin-top:7px;font-size:11px;overflow-wrap:anywhere}.summary{margin:17px 0 0;color:#dbe4f5;font-size:14px;line-height:1.65}.comment{margin-top:16px;padding:14px;border-radius:12px;border:1px solid #79e3c42e;background:#79e3c40d}.label{color:var(--accent);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}.comment-text{margin-top:8px;font-size:13px;line-height:1.6;overflow-wrap:anywhere}.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 0 10px;font-size:12px;font-weight:800}.defects{display:grid;gap:9px}.defect{padding:12px;border:1px solid var(--line);border-radius:12px;background:#03091438}.defect-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.defect-name{font-size:12px;font-weight:750;line-height:1.45}.defect-time{margin-top:4px;color:var(--muted);font-size:10px}.defect-desc{margin-top:9px;color:#b5c2d8;font-size:12px;line-height:1.6}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.tag{border-radius:6px;padding:4px 7px;color:#aab9d2;font-weight:500}.plain-list{display:grid;gap:7px;padding-left:18px;color:#b5c2d8;font-size:12px;line-height:1.55}.footer-links{display:flex;gap:14px;flex-wrap:wrap;margin-top:22px;padding-top:15px;border-top:1px solid var(--line);font-size:12px}.loading{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px}.spinner{width:15px;height:15px;border:2px solid #79e3c438;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.bottom-note{margin:20px 2px 0;color:#72829f;font-size:11px;line-height:1.6}
-@media(max-width:820px){.layout{grid-template-columns:1fr}.topbar{align-items:flex-start}}@media(max-width:540px){.shell{padding:17px 12px 28px}.topbar{flex-direction:column}.actions{width:100%;justify-content:space-between}.hero{padding:19px}.panel-head{padding:16px 15px 0}.panel-body{padding:16px 15px 18px}.api-state{font-size:11px}.result-head{display:grid}}
-</style></head><body><div class="shell">
-<header class="topbar"><div class="brand"><div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h3l2-6 4 12 3-9 2 3h4"/></svg></div><div><h1>Video Auditor</h1><p>Предварительная проверка · SFT Stage 1</p></div></div><div class="actions"><div class="api-state"><span class="dot" id="healthDot"></span><span id="healthText">Проверяем API…</span></div><a class="link-button" href="/docs" target="_blank" rel="noreferrer">Документация API ↗</a></div></header>
-<section class="hero"><div class="eyebrow">Video quality review</div><h2>Проверь видео по чек-листу</h2><p>Отправь публичную ссылку YouTube, выбери тип контента и получи предварительный отчёт по визуальным артефактам, звуку и правилам SFT. Результат можно открыть, изучить и скопировать в комментарий для разметки.</p></section>
-<main class="layout"><div class="column">
-<section class="panel"><div class="panel-head"><div><h3>Новая проверка</h3><div class="sub">Аудит выполняется в фоновом режиме</div></div><span class="count">01</span></div><div class="panel-body">
-<form id="auditForm"><div class="field"><label for="youtubeUrl">Ссылка на YouTube</label><input class="input" type="url" id="youtubeUrl" name="youtube_url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="url" required maxlength="2048"><small>Поддерживаются обычные ссылки, youtu.be и Shorts. Видео должно быть доступно для анализа.</small></div>
-<div class="field"><label for="contentType">Тип контента</label><select class="select" id="contentType" name="content_type"><option value="unknown">Не уверен / определить автоматически</option><option value="live_action">Реальное видео</option><option value="animation">Анимация / мультфильм</option></select><small>Для анимации применяются дополнительные правила: анатомия, стиль и синхронизация артикуляции со звуком.</small></div>
-<button class="primary full" id="submitButton" type="submit">Запустить проверку →</button><div class="message" id="formMessage" role="status" aria-live="polite"></div></form>
-<div class="note">Отчёт предварительный. Модель может пропустить дефекты или ошибиться; спорные случаи проверь вручную. Не отправляй материалы, для передачи которых внешнему API нет разрешения.</div>
-</div></section>
-<section class="panel"><div class="panel-head"><div><h3>Последние проверки</h3><div class="sub">Нажми на запись, чтобы открыть результат</div></div><button class="secondary" id="refreshButton" type="button">Обновить</button></div><div class="panel-body"><div class="history" id="historyList"><div class="empty">Загружаем историю проверок…</div></div></div></section>
-</div><div class="column"><section class="panel"><div class="panel-head"><div><h3>Результат проверки</h3><div class="sub" id="resultSubtitle">Выбери аудит из списка или создай новый</div></div><span class="count">02</span></div><div class="panel-body" id="resultContent"><div class="empty"><div class="empty-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></div><strong style="display:block;color:#dbe4f5;margin-bottom:6px">Здесь появится отчёт</strong>После завершения проверки увидишь вердикт, обнаруженные дефекты, уверенность модели и комментарий для разметки.</div></div></section></div></main>
-<p class="bottom-note">Video Auditor — инструмент предварительного анализа, а не автоматическая замена ручной разметки. Разрешение исходного видеопотока и другие признаки могут потребовать отдельной проверки.</p></div>
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.55;cursor:wait}
+.shell{max-width:1320px;margin:auto;padding:25px 22px 44px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:23px}.brand{display:flex;align-items:center;gap:12px}.logo{width:44px;height:44px;display:grid;place-items:center;border:1px solid #36594f;border-radius:14px;background:#16352f;color:var(--accent);font-size:23px}.brand h1{margin:0;font-size:18px;letter-spacing:-.03em}.brand p{margin:4px 0 0;color:var(--muted);font-size:12px}.actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.api-state{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);border-radius:99px;color:var(--muted);font-size:12px}.dot{width:7px;height:7px;border-radius:50%;background:var(--warning)}.dot.online{background:var(--success)}
+.primary,.secondary,.link-button{min-height:40px;padding:10px 14px;border:1px solid var(--line);border-radius:11px;color:var(--text);background:#ffffff08;font-size:12px}.primary{border:0;color:#06251d;font-weight:750;background:linear-gradient(135deg,#8cf0d3,#4acba8)}.secondary:hover,.link-button:hover{border-color:#477d6e;background:#79e3c410;text-decoration:none}.primary:hover{filter:brightness(1.05)}
+.hero{margin-bottom:18px;padding:23px 26px;border:1px solid var(--line);border-radius:19px;background:linear-gradient(115deg,#1b2b45ee,#101d2fca)}.eyebrow{color:var(--accent);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.16em}.hero h2{margin:8px 0 6px;font-size:clamp(23px,3vw,32px);letter-spacing:-.04em}.hero p{max-width:850px;margin:0;color:#b3c0d6;font-size:13px;line-height:1.65}
+.layout{display:grid;grid-template-columns:minmax(300px,.78fr) minmax(0,1.45fr);gap:17px;align-items:start}.column{display:grid;gap:16px;min-width:0}.panel{min-width:0;border:1px solid var(--line);border-radius:17px;background:var(--panel);box-shadow:0 14px 45px #0002;overflow:hidden}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 18px 0}.panel-head h3{margin:0;font-size:14px}.sub{margin-top:5px;color:var(--muted);font-size:11px}.panel-body{padding:17px 18px 19px}
+.field{display:grid;gap:7px;margin-bottom:14px}.field label{font-size:11px;color:#c5d0e4;font-weight:700}.field small{font-size:10px;line-height:1.5;color:var(--muted)}.input,.select{width:100%;min-height:43px;padding:11px;border-radius:10px;border:1px solid #a6b8db30;outline:0;color:var(--text);background:#050a1688}.input::placeholder{color:#677791}textarea.input{min-height:132px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;line-height:1.5}.input:focus,.select:focus{border-color:#79e3c4b3;box-shadow:0 0 0 3px #79e3c414}.select{color-scheme:dark}.full{width:100%;font-size:12px}
+.note{margin-top:12px;padding:10px 11px;border:1px solid #f7c66d30;border-radius:10px;color:#c5b897;background:#f7c66d0b;font-size:10px;line-height:1.55}
+.message{display:none;margin-top:11px;padding:10px 11px;border-radius:10px;font-size:11px;line-height:1.5}.message.show{display:block}.message.error{border:1px solid #ff8f9b40;color:#ffc0c6;background:#ff8f9b10}.message.info{border:1px solid #79e3c433;color:#b5f0dd;background:#79e3c40d}
+.history{display:grid;gap:7px}.history-item{width:100%;display:flex;align-items:center;gap:10px;text-align:left;padding:10px;border:1px solid transparent;border-radius:11px;color:var(--text);background:#ffffff06}.history-item:hover{background:#ffffff0b}.history-item.active{border-color:#79e3c45c;background:#79e3c40d}.h-icon{display:grid;place-items:center;width:34px;height:34px;flex-shrink:0;border-radius:9px;background:#8299c01c;color:#b8c9e7}.h-info{min-width:0;flex:1}.h-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:750}.h-meta{margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;color:var(--muted);font-size:9px}
+.pill,.tag{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:5px 8px;font-size:9px;font-weight:750;border:1px solid var(--line);color:#c5d0e4;background:#ffffff08}.pill.completed,.pill.accepted,.pill.approve,.tag.passed{color:var(--success);border-color:#79e3ad40;background:#79e3ad10}.pill.failed,.pill.rejected,.pill.reject,.tag.critical,.tag.failed{color:var(--danger);border-color:#ff8f9b40;background:#ff8f9b0c}.pill.manual,.pill.review,.tag.uncertain,.tag.unknown{color:var(--warning);border-color:#f7c66d40;background:#f7c66d0c}.count{display:grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:7px;border:1px solid var(--line);color:var(--muted);font-size:10px}
+.empty{padding:23px 12px;text-align:center;color:var(--muted);font-size:11px;line-height:1.6}.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:20px 0 9px;font-size:11px;font-weight:800}.result-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}.result-head h3{margin:0;font-size:15px}.result-url{display:inline-block;margin-top:6px;font-size:10px;overflow-wrap:anywhere}.summary{margin:15px 0 0;color:#dbe4f5;font-size:13px;line-height:1.65}.comment{margin-top:14px;padding:13px;border-radius:11px;border:1px solid #79e3c42e;background:#79e3c40d}.label{color:var(--accent);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}.comment-text{margin-top:7px;font-size:12px;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.tag{border-radius:6px;padding:4px 7px;color:#aab9d2;font-weight:500}.defects{display:grid;gap:8px}.defect{padding:11px;border:1px solid var(--line);border-radius:11px;background:#03091438}.defect-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.defect-name{font-size:11px;font-weight:750;line-height:1.45}.defect-time{margin-top:4px;color:var(--muted);font-size:9px}.defect-desc{margin-top:8px;color:#b5c2d8;font-size:11px;line-height:1.6}.evidence-frames{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.evidence-frame{margin:0;width:min(100%,170px);padding:5px;border:1px solid var(--line);border-radius:8px;background:#02071188}.evidence-frame img{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;border-radius:5px;background:#000}.evidence-frame figcaption{margin-top:4px;color:var(--muted);font-size:9px}.plain-list{display:grid;gap:6px;padding-left:17px;color:#b5c2d8;font-size:11px;line-height:1.55}
+.loading{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:11px}.spinner{width:14px;height:14px;border:2px solid #79e3c438;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.toolbar .select{min-width:150px;flex:1}.history-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.share-box{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:12px}.share-box code{min-width:0;flex:1;overflow-wrap:anywhere;color:#a9bddb;font-size:10px}.access-panel{margin-bottom:16px}.review-list{display:grid;gap:8px}.review-row{padding:10px;border:1px solid var(--line);border-radius:10px;background:#ffffff05}.review-row-title{font-size:11px;font-weight:700}.review-row-meta{margin-top:5px;color:var(--muted);font-size:9px}.review-controls{display:grid;gap:8px;margin-top:11px}.review-controls textarea{min-height:74px}.review-history{display:grid;gap:7px;margin-top:9px}.review-history-item{padding:9px;border:1px solid var(--line);border-radius:9px;background:#ffffff05}.review-history-item strong{font-size:10px}.review-history-item p{margin:5px 0 0;color:#b5c2d8;font-size:10px;line-height:1.5;white-space:pre-wrap}
+.bottom-note{margin:18px 2px 0;color:#72829f;font-size:10px;line-height:1.6}.footer-links{display:flex;gap:13px;flex-wrap:wrap;margin-top:18px;padding-top:13px;border-top:1px solid var(--line);font-size:10px}[hidden]{display:none!important}
+@media(max-width:840px){.layout{grid-template-columns:1fr}.topbar{align-items:flex-start}}@media(max-width:540px){.shell{padding:16px 11px 27px}.topbar{flex-direction:column}.actions{width:100%;justify-content:space-between}.hero{padding:18px}.panel-head{padding:15px 14px 0}.panel-body{padding:15px 14px 17px}.result-head{display:grid}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="topbar">
+ <div class="brand"><div class="logo" aria-hidden="true">⌁</div><div><h1>Video Auditor</h1><p>Рабочее пространство анализа видео</p></div></div>
+ <div class="actions"><div class="api-state"><span class="dot" id="healthDot"></span><span id="healthText">Проверяем API…</span></div><button class="secondary" id="accessToggle" type="button">Ключ команды</button><a class="link-button" href="/docs" target="_blank" rel="noreferrer">API ↗</a></div>
+</header>
+<section class="hero"><div class="eyebrow">Video quality analysis</div><h2>Анализируйте видео по критериям проекта</h2><p>Запускайте автоматическую проверку, изучайте технические параметры и визуальные признаки, получайте структурированный AI-отчёт и делитесь ссылкой на результат с командой.</p></section>
+<section class="panel access-panel" id="accessPanel" hidden>
+ <div class="panel-head"><div><h3>Общий ключ рабочего пространства</h3><div class="sub">Один и тот же ключ используется всеми участниками команды</div></div></div>
+ <div class="panel-body">
+  <div class="field"><label for="workspaceKey">Ключ доступа</label><input class="input" id="workspaceKey" type="password" autocomplete="off" placeholder="Введите общий ключ команды"></div>
+  <div class="toolbar"><button class="primary" id="saveKey" type="button">Сохранить ключ</button><button class="secondary" id="clearKey" type="button">Очистить</button></div>
+  <div class="message" id="accessMessage" role="status"></div>
+  <small class="sub">Для локальной разработки ключ можно не задавать. При сетевом или публичном размещении администратор сервера должен настроить WORKSPACE_ACCESS_KEY.</small>
+ </div>
+</section>
+<main class="layout">
+ <div class="column">
+  <section class="panel">
+   <div class="panel-head"><div><h3>Новый анализ</h3><div class="sub">Видео ставится в очередь и обрабатывается фоновым worker</div></div><span class="count">01</span></div>
+   <div class="panel-body">
+    <form id="auditForm">
+     <div class="field"><label for="youtubeUrl">Ссылка на YouTube</label><input class="input" type="url" id="youtubeUrl" placeholder="https://www.youtube.com/watch?v=…" required maxlength="2048"><small>Видео должно быть публично доступно для используемого способа загрузки.</small></div>
+     <div class="field"><label for="contentType">Тип контента</label><select class="select" id="contentType"><option value="unknown">Определить автоматически</option><option value="live_action">Реальное видео</option><option value="animation">Анимация / мультфильм</option></select></div>
+     <div class="field"><label for="criteriaSpec">Критерии проекта · JSON (необязательно)</label><textarea class="input" id="criteriaSpec" spellcheck="false" placeholder='{"name":"Outdoor people videos","version":"1.0","rules":[{"id":"minimum_height","type":"technical","field":"height","operator":"gte","value":1080,"severity":"critical"}]}'></textarea><small>Можно задать технические, визуальные и смысловые правила проекта. Без профиля выполняется стандартный SFT-анализ.</small></div>
+     <button class="primary full" id="submitButton" type="submit">Запустить анализ →</button>
+     <div class="message" id="formMessage" role="status" aria-live="polite"></div>
+    </form>
+    <div class="note">Отчёт является предварительной оценкой. Модель может пропустить дефекты или ошибиться; спорные случаи следует проверять по исходному видео. Используйте только материалы, которые разрешено передавать внешнему API.</div>
+   </div>
+  </section>
+  <section class="panel">
+   <div class="panel-head"><div><h3>Последние анализы</h3><div class="sub">Общая история рабочего пространства</div></div><button class="secondary" id="refreshButton" type="button">Обновить</button></div>
+   <div class="panel-body"><div class="history" id="historyList"><div class="empty">Загружаем историю…</div></div></div>
+  </section>
+  <section class="panel">
+   <div class="panel-head"><div><h3>Нужна ручная проверка</h3><div class="sub">Командная очередь неоднозначных результатов</div></div><button class="secondary" id="refreshReviewButton" type="button">Обновить</button></div>
+   <div class="panel-body"><div class="review-list" id="reviewQueue"><div class="empty">Загрузка очереди…</div></div></div>
+  </section>
+ </div>
+ <div class="column">
+  <section class="panel">
+   <div class="panel-head"><div><h3>Результат анализа</h3><div class="sub" id="resultSubtitle">Выберите проверку из истории или запустите новую</div></div><span class="count">02</span></div>
+   <div class="panel-body" id="resultContent"><div class="empty">Здесь появится технический, визуальный и AI-отчёт по видео.</div></div>
+  </section>
+ </div>
+</main>
+<p class="bottom-note">Video Auditor — помощник по анализу и контролю качества видеоматериалов. Его выводы не являются сертифицированным заключением и не заменяют проверку исходного материала.</p>
+</div>
 <script>
 (function(){
-const $=id=>document.getElementById(id),form=$("auditForm"),button=$("submitButton"),message=$("formMessage"),history=$("historyList"),result=$("resultContent"),subtitle=$("resultSubtitle");
+"use strict";
+const $=id=>document.getElementById(id);
+const form=$("auditForm"),submitButton=$("submitButton"),formMessage=$("formMessage");
+const history=$("historyList"),queue=$("reviewQueue"),result=$("resultContent"),subtitle=$("resultSubtitle");
+let workspaceKey=sessionStorage.getItem("videoAuditorWorkspaceKey")||"";
 let selected=null,timer=null,cache=[];
-const statusText={pending:"В очереди",processing:"Выполняется",completed:"Завершено",failed:"Ошибка"};
-const verdictText={candidate_accepted:"Предварительно подходит",candidate_rejected:"Предварительно отклонено",manual_review_required:"Нужна ручная проверка"};
-const verdictClass={candidate_accepted:"accepted",candidate_rejected:"rejected",manual_review_required:"manual"};
-const categories={watermark_or_overlay:"Водяной знак / наложенный текст",collage:"Коллаж из разных видео",non_monochrome_border:"Необычная рамка",unclear_or_fractal_content:"Неясное содержание / фракталы",excessive_camera_shake:"Сильная тряска камеры",frequent_cuts_under_5s:"Частые склейки короче 5 секунд",blockiness_pixelation_posterization:"Блочность / пикселизация / постеризация",low_complexity_or_monotony:"Низкая сложность / монотонность",strong_background_blur:"Сильное размытие",lens_drops_obstructing_subject:"Капли / пыль закрывают объект",double_exposure:"Двойная экспозиция",foreground_artifact:"Артефакт переднего плана",mirrored_or_flipped:"Отражение / переворот",ghosting_or_contour_flicker:"Гостинг / мерцание контуров",full_frame_blur_over_1s:"Расфокус всего кадра",severe_color_distortion:"Искажение цветопередачи",lens_flare_or_light_flicker:"Блики / мерцание света",ai_generated_or_edited:"Возможная ИИ-генерация / редактирование",severe_overexposure_or_darkness:"Пересвет / чрезмерная темнота",video_under_5_seconds:"Видео короче 5 секунд",inappropriate_speed_change:"Неподходящая смена скорости",aspect_ratio_distortion:"Растяжение / сплющивание",stutter_or_low_fps:"Подтормаживание / низкий FPS",old_film_effect:"Эффект старой плёнки",compression_artifacts:"Артефакты сжатия",photo_slideshow:"Слайд-шоу фотографий",unnatural_green_screen_composite:"Неестественная вклейка на фон",low_dynamics:"Низкая динамика",audio_distortion:"Искажение звука",audio_background_noise:"Посторонний шум / гул / шипение",audio_desync_or_echo:"Рассинхронизация / эхо",dubbed_or_mismatched_audio:"Несоответствующая озвучка",voiceover_masks_target_sound:"Голос / музыка перекрывает целевой звук",target_sound_source_not_visible:"Источник звука не виден",animation_anatomy_error:"Анатомические ошибки в анимации",animation_lip_sync:"Несовпадение артикуляции со звуком",flat_2d_animation:"Плоская 2D-анимация",animation_aesthetic_or_style:"Эстетика / цельность анимации",excluded_content_category:"Исключённая категория контента",other:"Другой дефект"};
-const severities={critical:"Критичный",non_critical:"Некритичный",uncertain:"Неопределённый"},confidences={high:"Высокая уверенность",medium:"Средняя уверенность",low:"Низкая уверенность"},coverage={adequate_for_preliminary_assessment:"Достаточно для предварительной оценки",limited:"Ограниченное покрытие",not_assessable:"Не удалось оценить"},types={unknown:"Не указан",live_action:"Реальное видео",animation:"Анимация"};
-async function api(path,options){options=options||{};const headers=Object.assign({Accept:"application/json"},options.body?{"Content-Type":"application/json"}:{},options.headers||{});const response=await fetch(path,Object.assign({},options,{headers:headers}));const raw=await response.text();let data=null;try{data=raw?JSON.parse(raw):null}catch(_){data=raw}if(!response.ok){let error=data&&typeof data==="object"?(data.detail||data.message||("HTTP "+response.status)):("HTTP "+response.status);if(Array.isArray(error))error=error.map(x=>x.msg||JSON.stringify(x)).join("; ");throw Error(String(error))}return data}
-function node(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined&&text!==null)n.textContent=String(text);return n}
-function statusPill(s){return node("span","pill "+(s||""),statusText[s]||s||"Неизвестно")}
-function verdictPill(v){return node("span","pill "+(verdictClass[v]||"manual"),verdictText[v]||v||"Вердикт не задан")}
-function errText(e){return e instanceof TypeError?"Нет связи с API. Проверь, что FastAPI запущен.":(e.message||"Неизвестная ошибка")}
-async function health(){try{await api("/health");$("healthDot").classList.add("online");$("healthText").textContent="API доступен"}catch(_){$("healthDot").classList.remove("online");$("healthText").textContent="API недоступен"}}
-async function loadHistory(){try{cache=await api("/api/v1/audits?limit=30&offset=0");renderHistory()}catch(e){history.replaceChildren(node("div","empty",errText(e)))}}
-function renderHistory(){history.replaceChildren();if(!cache.length){history.append(node("div","empty","Проверок пока нет. Создай первый аудит по ссылке YouTube."));return}cache.forEach(a=>{const b=node("button","history-item"+(a.id===selected?" active":""));b.type="button";const icon=node("span","h-icon");icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg>';const info=node("span","h-info");info.append(node("div","h-title",a.video_id||"YouTube-видео"));const meta=node("div","h-meta");meta.append(statusPill(a.status));if(a.status==="completed"&&a.verdict)meta.append(verdictPill(a.verdict));info.append(meta);b.append(icon,info);b.addEventListener("click",()=>openAudit(a.id));history.append(b)})}
-function stop(){if(timer)clearTimeout(timer);timer=null}function poll(){stop();timer=setTimeout(refreshCurrent,8000)}
-async function refreshCurrent(){await loadHistory();await health();if(selected){try{const a=await api("/api/v1/audits/"+encodeURIComponent(selected));renderResult(a);if(a.status==="pending"||a.status==="processing")poll();else stop()}catch(e){renderError(errText(e))}}}
-async function openAudit(id){selected=id;renderHistory();result.replaceChildren(node("div","loading","Загружаем результат…"));try{const a=await api("/api/v1/audits/"+encodeURIComponent(id));renderResult(a);if(a.status==="pending"||a.status==="processing")poll();else stop();renderHistory()}catch(e){stop();renderError(errText(e))}}
-function renderError(text){subtitle.textContent="Не удалось загрузить";result.replaceChildren(node("div","message show error",text))}
-function addList(parent,title,items){if(!Array.isArray(items)||!items.length)return;parent.append(node("div","section-title",title));const ul=node("ul","plain-list");items.forEach(x=>ul.append(node("li","",x)));parent.append(ul)}
-function renderResult(a){
-result.replaceChildren();subtitle.textContent="ID: "+a.id;const head=node("div","result-head"),about=node("div");about.append(node("h3","",a.video_id?"Видео "+a.video_id:"Аудит видео"));const link=node("a","result-url",a.youtube_url||"");link.href=a.youtube_url||"#";link.target="_blank";link.rel="noreferrer";about.append(link);const status=node("div");status.append(statusPill(a.status));if(a.status==="completed"&&a.verdict){status.append(document.createTextNode(" "));status.append(verdictPill(a.verdict))}head.append(about,status);result.append(head);
-if(a.status==="pending"||a.status==="processing"){const box=node("div","comment"),line=node("div","loading");line.append(node("span","spinner"),document.createTextNode(a.status==="pending"?"Задание в очереди. Ожидаем worker…":"Модель анализирует видео. Это может занять несколько минут…"));box.append(line,node("div","comment-text","Статус обновится автоматически. Не отправляй ту же ссылку повторно."));result.append(box);return}
-if(a.status==="failed"){result.append(node("div","message show error",a.error_message||"Аудит завершился с ошибкой. Проверь журнал worker."));return}
-const r=a.report||{},summary=r.summary||a.summary;if(summary)result.append(node("p","summary",summary));
-const comment=r.markup_comment||a.markup_comment;if(comment){const box=node("div","comment");box.append(node("div","label","Комментарий для разметки"),node("div","comment-text",comment));const copy=node("button","secondary","Скопировать комментарий");copy.type="button";copy.style.marginTop="11px";copy.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(comment);copy.textContent="Скопировано"}catch(_){copy.textContent="Не удалось скопировать"}});box.append(copy);result.append(box)}
-const meta=node("div","tags");meta.append(node("span","tag","Тип: "+(types[a.content_type]||a.content_type||"Не указан")));if(r.review_coverage)meta.append(node("span","tag","Покрытие: "+(coverage[r.review_coverage]||r.review_coverage)));const defects=Array.isArray(r.detected_defects)?r.detected_defects:(a.detected_defects||[]);meta.append(node("span","tag","Дефектов: "+defects.length));result.append(meta);
-result.append(node("div","section-title","Обнаруженные признаки"));if(!defects.length)result.append(node("div","empty","В отчёте нет подтверждённых дефектов. Это не гарантирует отсутствие всех проблем."));
-else{const list=node("div","defects");defects.forEach(d=>{const card=node("article","defect"),top=node("div","defect-top"),name=node("div");name.append(node("div","defect-name",categories[d.category]||d.category||"Другой дефект"));const time=[d.start_time,d.end_time].filter(Boolean).join(" – ");name.append(node("div","defect-time",time?"Ориентировочно: "+time:"Временная метка не указана"));const sevClass=d.severity==="critical"?" critical":(d.severity==="uncertain"?" uncertain":"");top.append(name,node("span","tag"+sevClass,severities[d.severity]||d.severity||"Не задана"));card.append(top);if(d.description)card.append(node("div","defect-desc",d.description));const tags=node("div","tags");if(d.confidence)tags.append(node("span","tag",confidences[d.confidence]||d.confidence));tags.append(node("span","tag",typeof d.estimated_video_fraction==="number"?(Math.round(d.estimated_video_fraction*100)+"% длительности"):"Доля не оценена"));card.append(tags);list.append(card)});result.append(list)}
-addList(result,"Не удалось проверить надёжно",r.not_assessed||[]);addList(result,"Причины ручной проверки",r.manual_review_reasons||[]);const footer=node("div","footer-links"),video=node("a","","Открыть видео на YouTube ↗"),docs=node("a","","Открыть документацию API ↗");video.href=a.youtube_url;video.target="_blank";video.rel="noreferrer";docs.href="/docs";docs.target="_blank";docs.rel="noreferrer";footer.append(video,docs);result.append(footer)
+const statuses={pending:"В очереди",processing:"Выполняется",cancelling:"Отмена…",cancelled:"Отменено",completed:"Завершено",failed:"Ошибка"};
+const stages={download:"Скачивание видео",ffprobe:"Технический анализ",opencv:"Анализ кадров",gemini:"AI-анализ Gemini"};
+const verdicts={candidate_accepted:"Предварительно подходит",candidate_rejected:"Предварительно отклонено",manual_review_required:"Нужна ручная проверка"};
+const verdictClasses={candidate_accepted:"accepted",candidate_rejected:"rejected",manual_review_required:"manual"};
+const decisions={APPROVE:"Критерии выполнены",REVIEW:"Нужна ручная проверка",REJECT:"Критерии не выполнены"};
+const labels={
+ watermark_or_overlay:"Водяной знак / наложенный текст",collage:"Коллаж из разных видео",non_monochrome_border:"Необычная рамка",unclear_or_fractal_content:"Неясное содержание / фракталы",excessive_camera_shake:"Сильная тряска камеры",frequent_cuts_under_5s:"Частые склейки короче 5 секунд",blockiness_pixelation_posterization:"Блочность / пикселизация / постеризация",low_complexity_or_monotony:"Низкая сложность / монотонность",strong_background_blur:"Сильное размытие фона",lens_drops_obstructing_subject:"Капли / пыль закрывают объект",double_exposure:"Двойная экспозиция",foreground_artifact:"Артефакт переднего плана",mirrored_or_flipped:"Отражение / переворот",ghosting_or_contour_flicker:"Гостинг / мерцание контуров",full_frame_blur_over_1s:"Расфокус всего кадра",severe_color_distortion:"Искажение цветопередачи",lens_flare_or_light_flicker:"Блики / мерцание света",ai_generated_or_edited:"Возможная ИИ-генерация / редактирование",severe_overexposure_or_darkness:"Пересвет / чрезмерная темнота",video_under_5_seconds:"Видео короче 5 секунд",inappropriate_speed_change:"Неподходящая смена скорости",aspect_ratio_distortion:"Растяжение / сплющивание",stutter_or_low_fps:"Подтормаживание / низкий FPS",old_film_effect:"Эффект старой плёнки",compression_artifacts:"Артефакты сжатия",photo_slideshow:"Слайд-шоу фотографий",unnatural_green_screen_composite:"Неестественная вклейка на фон",low_dynamics:"Низкая динамика",audio_distortion:"Искажение звука",audio_background_noise:"Посторонний шум / гул / шипение",audio_desync_or_echo:"Рассинхронизация / эхо",dubbed_or_mismatched_audio:"Несоответствующая озвучка",voiceover_masks_target_sound:"Голос / музыка перекрывает целевой звук",target_sound_source_not_visible:"Источник звука не виден",animation_anatomy_error:"Анатомические ошибки в анимации",animation_lip_sync:"Несовпадение артикуляции со звуком",flat_2d_animation:"Плоская 2D-анимация",animation_aesthetic_or_style:"Эстетика / цельность анимации",excluded_content_category:"Исключённая категория контента",other:"Другой дефект"
+};
+function node(tag,cls,text){const element=document.createElement(tag);if(cls)element.className=cls;if(text!==undefined&&text!==null)element.textContent=String(text);return element}
+function button(text,cls,handler){const element=node("button",cls,text);element.type="button";element.addEventListener("click",handler);return element}
+function message(target,text,type){target.textContent=text;target.className="message show "+(type||"info")}
+function errorText(error){return error instanceof TypeError?"Нет связи с API. Проверьте, что сервер запущен.":(error.message||"Неизвестная ошибка")}
+function showAccessPrompt(text){$("accessPanel").hidden=false;if(text)message($("accessMessage"),text,"error")}
+async function api(path,options){
+ options=options||{};
+ const headers=Object.assign({Accept:"application/json"},options.body?{"Content-Type":"application/json"}:{},options.headers||{});
+ if(workspaceKey)headers.Authorization="Bearer "+workspaceKey;
+ const response=await fetch(path,Object.assign({},options,{headers}));
+ const raw=await response.text();let data=null;try{data=raw?JSON.parse(raw):null}catch(_){data=raw}
+ if(!response.ok){
+  if(response.status===401&&path!=="/health")showAccessPrompt(data&&data.detail?data.detail:"Введите общий ключ рабочего пространства.");
+  let error=data&&typeof data==="object"?(data.detail||data.message||("HTTP "+response.status)):("HTTP "+response.status);
+  if(Array.isArray(error))error=error.map(item=>item.msg||JSON.stringify(item)).join("; ");
+  throw Error(String(error))
+ }
+ return data
 }
-form.addEventListener("submit",async event=>{event.preventDefault();message.className="message";button.disabled=true;button.textContent="Отправляем…";try{const body={youtube_url:$("youtubeUrl").value.trim(),content_type:$("contentType").value};const a=await api("/api/v1/audits",{method:"POST",body:JSON.stringify(body)});selected=a.id;message.textContent="Задание создано. Результат появится справа; статус обновится автоматически.";message.className="message show info";await loadHistory();await openAudit(a.id)}catch(e){message.textContent=errText(e);message.className="message show error"}finally{button.disabled=false;button.textContent="Запустить проверку →"}});
-$("refreshButton").addEventListener("click",refreshCurrent);health();loadHistory();setInterval(health,30000);
+function statusPill(status){return node("span","pill "+(status||""),statuses[status]||status||"Неизвестно")}
+function verdictPill(verdict){return node("span","pill "+(verdictClasses[verdict]||"manual"),verdicts[verdict]||verdict||"Вердикт не задан")}
+function decisionPill(decision){return node("span","pill "+({APPROVE:"approve",REVIEW:"review",REJECT:"reject"}[decision]||"manual"),decisions[decision]||decision||"Решение не задано")}
+function formatTime(seconds){
+ if(!Number.isFinite(seconds)||seconds<0)return "—";
+ const whole=Math.floor(seconds),hours=Math.floor(whole/3600),minutes=Math.floor((whole%3600)/60),secs=whole%60;
+ return hours>0?String(hours).padStart(2,"0")+":"+String(minutes).padStart(2,"0")+":"+String(secs).padStart(2,"0"):String(minutes).padStart(2,"0")+":"+String(secs).padStart(2,"0")
+}
+function showHealth(online){$("healthDot").classList.toggle("online",online);$("healthText").textContent=online?"API доступен":"API недоступен"}
+async function health(){try{await api("/health");showHealth(true)}catch(_){showHealth(false)}}
+async function loadHistory(){
+ try{cache=await api("/api/v1/audits?limit=30&offset=0");renderHistory()}
+ catch(error){history.replaceChildren(node("div","empty",errorText(error)))}
+}
+function renderHistory(){
+ history.replaceChildren();
+ if(!cache.length){history.append(node("div","empty","Проверок пока нет. Запустите первый анализ по ссылке YouTube."));return}
+ cache.forEach(a=>{
+  const item=button("", "history-item"+(a.id===selected?" active":""),()=>openAudit(a.id));
+  item.append(node("span","h-icon","▶"));
+  const info=node("span","h-info");info.append(node("div","h-title",a.video_id||"YouTube-видео"));
+  const meta=node("div","h-meta");meta.append(statusPill(a.status));
+  if(a.processing_stage)meta.append(node("span","tag",stages[a.processing_stage]||a.processing_stage));
+  if(a.verdict)meta.append(verdictPill(a.verdict));if(a.decision)meta.append(decisionPill(a.decision));
+  info.append(meta);item.append(info);history.append(item)
+ })
+}
+async function loadQueue(){
+ try{
+  const items=await api("/api/v1/reviews/queue?limit=50");
+  queue.replaceChildren();
+  if(!items.length){queue.append(node("div","empty","Нет результатов, ожидающих ручной проверки."));return}
+  items.forEach(a=>{
+   const row=node("article","review-row"),top=node("div","defect-top"),about=node("div");
+   about.append(node("div","review-row-title","Видео "+(a.video_id||a.id)));
+   about.append(node("div","review-row-meta",a.decision_summary||a.summary||"AI или критерии проекта запросили дополнительную проверку."));
+   top.append(about,node("span","tag unknown",a.review_status==="assigned"?"Историческое назначение":"Ожидает"));
+   row.append(top);
+   const open=button("Открыть результат","secondary",()=>openAudit(a.id));row.append(open);queue.append(row)
+  })
+ }catch(error){queue.replaceChildren(node("div","empty",errorText(error)))}
+}
+async function shareAudit(id,element){
+ const url=window.location.origin+"/?audit="+encodeURIComponent(id);
+ try{await navigator.clipboard.writeText(url);element.textContent="Ссылка скопирована"}
+ catch(_){const input=node("input","input");input.value=url;input.style.marginTop="8px";result.append(input);input.select();element.textContent="Выделите и скопируйте ссылку"}
+}
+function appendTags(parent,items){
+ const tags=node("div","tags");items.filter(item=>item!==null&&item!==undefined&&item!=="").forEach(item=>tags.append(node("span","tag",item)));if(tags.childNodes.length)parent.append(tags)
+}
+function appendTechnical(parent,a){
+ const meta=a.technical_metadata,findings=Array.isArray(a.technical_findings)?a.technical_findings:[];
+ if(meta){
+  const video=meta.video||{},audio=Array.isArray(meta.audio_streams)?meta.audio_streams:[];
+  const duration=Number.isFinite(meta.duration_seconds)?meta.duration_seconds.toFixed(2)+" сек":"—";
+  const resolution=video.width&&video.height?video.width+" × "+video.height:"—";
+  appendTags(parent,["Длительность: "+duration,"Разрешение: "+resolution,Number.isFinite(video.frame_rate)?video.frame_rate.toFixed(2)+" FPS":"FPS не определён","Кодек: "+(video.codec||"—"),meta.has_audio?"Аудио: "+audio.map(x=>x.codec||"неизвестно").join(", "):"Аудиодорожка отсутствует"]);
+  parent.append(node("div","section-title","Технические параметры · FFprobe"))
+ }
+ if(findings.length){
+  parent.append(node("div","section-title","Технические наблюдения"));const list=node("div","defects");
+  const names={video_under_5_seconds:"Видео короче 5 секунд",audio_stream_missing:"Аудиодорожка не найдена",frame_rate_unavailable:"Не удалось определить FPS",ffprobe_unavailable:"FFprobe недоступен"};
+  findings.forEach(f=>{const card=node("article","defect"),top=node("div","defect-top"),name=node("div","defect-name",names[f.code]||f.code||"Техническое наблюдение");top.append(name,node("span","tag "+(f.severity==="critical"?"critical":""),f.severity||"warning"));card.append(top);if(f.description)card.append(node("div","defect-desc",f.description));list.append(card)});
+  parent.append(list)
+ }
+}
+function appendVisual(parent,a){
+ const visual=a.visual_metadata,findings=Array.isArray(a.visual_findings)?a.visual_findings:[];
+ if(visual){
+  parent.append(node("div","section-title","Компьютерный анализ · OpenCV"));
+  appendTags(parent,["Кадров проверено: "+(visual.sampled_frames??"—"),"Шаг выборки: "+(Number.isFinite(visual.sample_interval_seconds)?visual.sample_interval_seconds.toFixed(2)+" сек":"—"),"OpenCV: "+(visual.opencv_version||"—"),Number.isFinite(visual.evidence_frames)?"Кадров-доказательств: "+visual.evidence_frames:null,visual.source_width&&visual.source_height?"Исходный кадр: "+visual.source_width+" × "+visual.source_height:null,visual.sampling_was_capped?"Достигнут лимит выборки":null])
+ }
+ if(findings.length){
+  parent.append(node("div","section-title","Визуальные наблюдения"));const list=node("div","defects");
+  const names={black_frame_segment:"Возможный чёрный участок",freeze_frame_suspected:"Возможное зависание кадра",scene_change_suspected:"Возможная смена сцены",blur_suspected:"Возможное размытие",opencv_unavailable:"OpenCV недоступен",opencv_analysis_failed:"Компьютерный анализ не завершён"};
+  findings.forEach(f=>{
+   const card=node("article","defect"),top=node("div","defect-top"),name=node("div");
+   name.append(node("div","defect-name",names[f.code]||f.code||"Визуальное наблюдение"));
+   const ev=f.evidence||{};
+   if(Number.isFinite(ev.start_time_seconds))name.append(node("div","defect-time","Время: "+formatTime(ev.start_time_seconds)+(Number.isFinite(ev.end_time_seconds)?" – "+formatTime(ev.end_time_seconds):"")));
+   top.append(name,node("span","tag",f.severity||"warning"));card.append(top);
+   if(f.description)card.append(node("div","defect-desc",f.description));
+   appendTags(card,[Number.isFinite(ev.estimated_duration_seconds)?"Длительность: ~"+ev.estimated_duration_seconds.toFixed(2)+" сек":null,Number.isFinite(ev.sample_count)?"Выборок: "+ev.sample_count:null,Number.isFinite(ev.mean_focus_measure)?"Фокус: "+ev.mean_focus_measure.toFixed(1):null,Number.isFinite(ev.scene_change_score)?"Смена сцены: "+ev.scene_change_score.toFixed(2):null,f.confidence?"Уверенность: "+f.confidence:null]);
+   const frames=Array.isArray(ev.frames)?ev.frames.filter(frame=>frame&&frame.mime_type==="image/jpeg"&&typeof frame.data_base64==="string"&&frame.data_base64.length<=20000&&/^[A-Za-z0-9+/]+={0,2}$/.test(frame.data_base64)):[];
+   if(frames.length){const gallery=node("div","evidence-frames");frames.forEach(frame=>{const figure=node("figure","evidence-frame"),img=document.createElement("img");img.src="data:image/jpeg;base64,"+frame.data_base64;img.alt="Кадр на "+formatTime(frame.timestamp_seconds);img.loading="lazy";figure.append(img,node("figcaption","",formatTime(frame.timestamp_seconds)));gallery.append(figure)});card.append(gallery)}
+   list.append(card)
+  });
+  parent.append(list)
+ }
+}
+function appendCriteria(parent,a){
+ const data=a.criteria_results;if(!data||!Array.isArray(data.rules))return;
+ const section=node("div","comment");section.append(node("div","label","Решение по критериям проекта"));
+ const top=node("div","defect-top");top.style.marginTop="8px";top.append(node("div","defect-name",data.criteria_name||"Критерии проекта"),decisionPill(a.decision||data.decision));section.append(top);
+ if(data.summary)section.append(node("div","comment-text",data.summary));
+ const counts=data.counts||{};appendTags(section,["Выполнено: "+(counts.passed??0),"Нарушено: "+(counts.failed??0),"Неизвестно: "+(counts.unknown??0)]);
+ const list=node("div","defects");const names={passed:"Выполнено",failed:"Нарушено",unknown:"Не удалось проверить"};
+ data.rules.forEach(rule=>{const card=node("article","defect"),topRow=node("div","defect-top");topRow.append(node("div","defect-name",rule.description||rule.id),node("span","tag "+(rule.status||"unknown"),names[rule.status]||rule.status||"Неизвестно"));card.append(topRow);appendTags(card,[rule.type,rule.severity,"ID: "+rule.id,rule.field?"Поле: "+rule.field:null,rule.code?"Код: "+rule.code:null]);if(rule.expected!==null&&rule.expected!==undefined)card.append(node("div","defect-time","Ожидалось: "+(Array.isArray(rule.expected)?rule.expected.join(" – "):String(rule.expected))));if(rule.observed!==null&&rule.observed!==undefined)card.append(node("div","defect-time","Получено: "+String(rule.observed)));if(rule.reason)card.append(node("div","defect-desc",rule.reason));list.append(card)});
+ section.append(list);parent.append(section)
+}
+function appendMetrics(parent,a){
+ const usage=a.gemini_usage,metrics=a.processing_metrics;if(!usage&&!metrics&&a.gemini_cost_usd==null&&a.gemini_cost_rub==null)return;
+ const box=node("div","comment");box.append(node("div","label","Расход Gemini и время обработки"));
+ if(usage){appendTags(box,[Number.isFinite(usage.request_count)?"Запросов: "+usage.request_count:null,Number.isFinite(usage.input_tokens)?"Входные токены: "+usage.input_tokens.toLocaleString("ru-RU"):null,Number.isFinite(usage.output_tokens)?"Выходные токены: "+usage.output_tokens.toLocaleString("ru-RU"):null,Number.isFinite(usage.thought_tokens)?"Thinking: "+usage.thought_tokens.toLocaleString("ru-RU"):null,Number.isFinite(usage.cached_input_tokens)?"Из кэша: "+usage.cached_input_tokens.toLocaleString("ru-RU"):null]);}
+ appendTags(box,[Number.isFinite(a.gemini_cost_usd)?"Gemini ≈ $"+a.gemini_cost_usd.toFixed(6):null,Number.isFinite(a.gemini_cost_rub)?"≈ "+a.gemini_cost_rub.toLocaleString("ru-RU",{maximumFractionDigits:4})+" ₽":null]);
+ if(metrics){const stagesTotal=metrics.stage_totals_seconds||{};appendTags(box,[...Object.entries({download:"Загрузка",ffprobe:"FFprobe",opencv:"OpenCV",gemini:"Gemini"}).map(([key,label])=>Number.isFinite(stagesTotal[key])?label+": "+stagesTotal[key].toFixed(2)+" сек":null),"Всего: "+(Number.isFinite(metrics.total_seconds)?metrics.total_seconds.toFixed(2):"—")+" сек","Попыток: "+(metrics.attempt_count??"—")])}
+ box.append(node("div","defect-time","Стоимость — расчётная оценка по настроенному тарифу, не счёт Google."));parent.append(box)
+}
+async function appendReviewHistory(parent,id){
+ try{
+  const events=await api("/api/v1/reviews/"+encodeURIComponent(id)+"/history");
+  if(selected!==id||!events.length)return;
+  const section=node("div","comment");section.append(node("div","label","История командных решений"));
+  const list=node("div","review-history");
+  events.forEach(event=>{const item=node("div","review-history-item"),top=node("div","defect-top");top.append(node("strong","",({queued:"Добавлено в очередь",decision_submitted:"Решение команды",reopened:"Проверка открыта повторно"}[event.action]||event.action)),node("span","tag",new Date(event.created_at).toLocaleString("ru-RU")));item.append(top);if(event.decision)item.append(node("div","defect-time","Решение: "+event.decision));if(event.comment)item.append(node("p","",event.comment));list.append(item)});
+  section.append(list);parent.append(section)
+ }catch(_){}
+}
+function appendReviewControls(parent,a){
+ if(a.status!=="completed"||!["pending","assigned","completed"].includes(a.review_status||"not_required"))return;
+ const section=node("div","comment");section.append(node("div","label","Решение команды"));
+ if(a.human_review_decision)section.append(node("div","comment-text","Последнее решение: "+a.human_review_decision+(a.human_review_comment?" · "+a.human_review_comment:"")));
+ if(a.review_status==="pending"||a.review_status==="assigned"){
+  const controls=node("div","review-controls"),choice=node("select","select");
+  [["approved","Одобрить"],["rejected","Отклонить"],["needs_changes","Запросить исправления"]].forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;choice.append(option)});
+  const comment=node("textarea","input");comment.placeholder="Комментарий. При отклонении или запросе исправлений укажите причину (не менее 10 символов).";
+  const save=button("Сохранить решение","primary",async()=>{save.disabled=true;try{const updated=await api("/api/v1/reviews/"+encodeURIComponent(a.id)+"/decision",{method:"POST",body:JSON.stringify({decision:choice.value,comment:comment.value.trim()||null})});renderResult(updated);await loadHistory();await loadQueue()}catch(error){alert(errorText(error));save.disabled=false}});
+  controls.append(choice,comment,save);section.append(controls)
+ }else if(a.review_status==="completed"){
+  const controls=node("div","review-controls"),comment=node("textarea","input");comment.placeholder="Причина повторного открытия проверки";
+  const reopen=button("Открыть проверку повторно","secondary",async()=>{reopen.disabled=true;try{const updated=await api("/api/v1/reviews/"+encodeURIComponent(a.id)+"/reopen",{method:"POST",body:JSON.stringify({comment:comment.value.trim()})});renderResult(updated);await loadHistory();await loadQueue()}catch(error){alert(errorText(error));reopen.disabled=false}});
+  controls.append(comment,reopen);section.append(controls)
+ }
+ parent.append(section);appendReviewHistory(parent,a.id)
+}
+function renderResult(a){
+ result.replaceChildren();subtitle.textContent="ID: "+a.id;
+ const head=node("div","result-head"),about=node("div"),status=node("div");
+ about.append(node("h3","",a.video_id?"Видео "+a.video_id:"Анализ видео"));
+ const link=node("a","result-url",a.youtube_url||"");link.href=a.youtube_url||"#";link.target="_blank";link.rel="noreferrer";about.append(link);
+ status.append(statusPill(a.status));if(a.processing_stage)status.append(node("span","tag",stages[a.processing_stage]||a.processing_stage));if(a.verdict)status.append(verdictPill(a.verdict));if(a.decision)status.append(decisionPill(a.decision));
+ head.append(about,status);result.append(head);
+ const share=node("div","share-box"),shareButton=button("Поделиться результатом","secondary",()=>shareAudit(a.id,shareButton));share.append(shareButton,node("code","","Ссылка откроет этот анализ участникам рабочего пространства."));result.append(share);
+ appendTechnical(result,a);appendVisual(result,a);appendCriteria(result,a);appendMetrics(result,a);
+ if(["pending","processing","cancelling"].includes(a.status)){
+  const box=node("div","comment"),line=node("div","loading"),waiting=a.status==="pending",cancelling=a.status==="cancelling";
+  line.append(node("span","spinner"),document.createTextNode(cancelling?"Останавливаем анализ…":waiting?"Задание в очереди. Ожидаем worker…":"Выполняется: "+(stages[a.processing_stage]||"подготовка")+"."));
+  box.append(line,node("div","comment-text",cancelling?"Worker завершает текущий этап и очищает временные файлы.":"Статус и текущий этап обновляются автоматически."));
+  if(!cancelling){const cancel=button("Отменить анализ","secondary",async()=>{cancel.disabled=true;try{const updated=await api("/api/v1/audits/"+encodeURIComponent(a.id)+"/cancel",{method:"POST"});renderResult(updated);await loadHistory();if(["pending","processing","cancelling"].includes(updated.status))poll();else stop()}catch(error){alert(errorText(error));cancel.disabled=false}});box.append(cancel)}
+  result.append(box);appendReviewControls(result,a);return
+ }
+ if(a.status==="failed"){result.append(node("div","message show error",a.error_message||"Не удалось завершить анализ. Проверьте журнал Worker."));return}
+ if(a.status==="cancelled"){result.append(node("div","message show info",a.error_message||"Анализ отменён."));return}
+ const report=a.report||{},summary=report.summary||a.summary;if(summary)result.append(node("p","summary",summary));
+ const comment=report.markup_comment||a.markup_comment;if(comment){const box=node("div","comment");box.append(node("div","label","Комментарий для разметки"),node("div","comment-text",comment));const copy=button("Скопировать комментарий","secondary",async()=>{try{await navigator.clipboard.writeText(comment);copy.textContent="Скопировано"}catch(_){copy.textContent="Не удалось скопировать"}});copy.style.marginTop="10px";box.append(copy);result.append(box)}
+ const defects=Array.isArray(report.detected_defects)?report.detected_defects:(a.detected_defects||[]);
+ appendTags(result,["Дефектов: "+defects.length,report.review_coverage?"Покрытие: "+report.review_coverage:null]);
+ result.append(node("div","section-title","Обнаруженные признаки"));
+ if(!defects.length)result.append(node("div","empty","В отчёте нет подтверждённых дефектов. Это не гарантирует отсутствие всех проблем."));
+ else{
+  const list=node("div","defects");
+  defects.forEach(defect=>{const card=node("article","defect"),top=node("div","defect-top"),name=node("div");name.append(node("div","defect-name",labels[defect.category]||defect.category||"Другой дефект"));const times=[defect.start_time,defect.end_time].filter(Boolean).join(" – ");name.append(node("div","defect-time",times?"Ориентировочно: "+times:"Временная метка не указана"));top.append(name,node("span","tag "+(defect.severity==="critical"?"critical":defect.severity==="uncertain"?"unknown":""),defect.severity||"не задано"));card.append(top);if(defect.description)card.append(node("div","defect-desc",defect.description));appendTags(card,[defect.confidence?"Уверенность: "+defect.confidence:null,typeof defect.estimated_video_fraction==="number"?Math.round(defect.estimated_video_fraction*100)+"% длительности":null]);list.append(card)});
+  result.append(list)
+ }
+ const addList=(title,items)=>{if(!Array.isArray(items)||!items.length)return;result.append(node("div","section-title",title));const ul=node("ul","plain-list");items.forEach(item=>ul.append(node("li","",item)));result.append(ul)};
+ addList("Не удалось проверить надёжно",report.not_assessed);addList("Причины дополнительной проверки",report.manual_review_reasons);
+ appendReviewControls(result,a);
+ const footer=node("div","footer-links"),docs=node("a","","Документация API ↗");docs.href="/docs";docs.target="_blank";footer.append(docs);result.append(footer)
+}
+function stop(){if(timer)clearTimeout(timer);timer=null}
+function poll(){stop();timer=setTimeout(refreshCurrent,5000)}
+async function refreshCurrent(){
+ if(!selected)return;
+ try{
+  const a=await api("/api/v1/audits/"+encodeURIComponent(selected)),cached=cache.find(item=>item.id===a.id),old=cached?cached.status:null;
+  if(cached){cached.status=a.status;cached.processing_stage=a.processing_stage;cached.verdict=a.verdict;cached.decision=a.decision}
+  if(old!==a.status){renderHistory();await loadHistory();await loadQueue()}
+  renderResult(a);if(["pending","processing","cancelling"].includes(a.status))poll();else stop()
+ }catch(error){stop();result.replaceChildren(node("div","message show error",errorText(error)))}
+}
+async function openAudit(id){
+ selected=id;stop();renderHistory();subtitle.textContent="ID: "+id;result.replaceChildren(node("div","loading","Загружаем результат…"));
+ try{const a=await api("/api/v1/audits/"+encodeURIComponent(id));renderResult(a);if(["pending","processing","cancelling"].includes(a.status))poll();renderHistory()}
+ catch(error){result.replaceChildren(node("div","message show error",errorText(error)))}
+}
+form.addEventListener("submit",async event=>{
+ event.preventDefault();formMessage.className="message";submitButton.disabled=true;submitButton.textContent="Отправляем…";
+ try{
+  const body={youtube_url:$("youtubeUrl").value.trim(),content_type:$("contentType").value},criteria=$("criteriaSpec").value.trim();
+  if(criteria){try{body.criteria_spec=JSON.parse(criteria)}catch(_){throw Error("Критерии проекта содержат некорректный JSON.")}}
+  const audit=await api("/api/v1/audits",{method:"POST",body:JSON.stringify(body)});
+  selected=audit.id;message(formMessage,"Задание создано. Анализ выполняется в фоне.","info");await loadHistory();await openAudit(audit.id)
+ }catch(error){message(formMessage,errorText(error),"error")}
+ finally{submitButton.disabled=false;submitButton.textContent="Запустить анализ →"}
+});
+$("refreshButton").addEventListener("click",async()=>{await loadHistory();await loadQueue();if(selected)await refreshCurrent()});
+$("refreshReviewButton").addEventListener("click",loadQueue);
+$("accessToggle").addEventListener("click",()=>{$("accessPanel").hidden=!$("accessPanel").hidden;$("workspaceKey").value=workspaceKey});
+$("saveKey").addEventListener("click",async()=>{
+ const candidate=$("workspaceKey").value.trim();
+ workspaceKey=candidate;
+ if(workspaceKey)sessionStorage.setItem("videoAuditorWorkspaceKey",workspaceKey);else sessionStorage.removeItem("videoAuditorWorkspaceKey");
+ $("accessMessage").className="message";
+ try{
+  await api("/api/v1/audits?limit=1");
+  $("accessPanel").hidden=true;
+  await loadHistory();await loadQueue();
+  message($("accessMessage"),"Ключ принят и сохранён для этой вкладки.","info");
+  const id=new URLSearchParams(window.location.search).get("audit");if(id)await openAudit(id)
+ }catch(error){message($("accessMessage"),errorText(error),"error")}
+});
+$("clearKey").addEventListener("click",()=>{workspaceKey="";sessionStorage.removeItem("videoAuditorWorkspaceKey");$("workspaceKey").value="";message($("accessMessage"),"Ключ удалён из текущей сессии.","info")});
+async function start(){
+ await health();
+ try{await loadHistory();await loadQueue();const id=new URLSearchParams(window.location.search).get("audit");if(id)await openAudit(id)}
+ catch(error){showAccessPrompt(errorText(error))}
+}
+start();setInterval(health,30000);
 })();
-</script></body></html>
+</script>
+</body>
+</html>
